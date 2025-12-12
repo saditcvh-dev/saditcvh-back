@@ -16,7 +16,7 @@ const {
 
     cookieOptions: {
         httpOnly: false,
-        sameSite: "strict",
+        sameSite: "none",
         maxAge: 1000 * 60 * 60 * 2, // 2 horas
         secure: process.env.NODE_ENV === "production",
     },
