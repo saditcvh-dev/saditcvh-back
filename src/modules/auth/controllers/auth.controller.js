@@ -1,70 +1,68 @@
 const authService = require("../services/auth.service");
-const { badRequest } = require("../../../utils/errorResponse");
-const { User, Role } = require("../../../database/associations")
-const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const { badRequest, unauthorized } = require("../../../utils/errorResponse");
+const { User, Role } = require("../../../database/associations");
 const jwtConfig = require("../../../config/jwt");
 
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
 /**
- * Configuración de las cookies para los tokens de sesión
+ * CONSTANTES DE TIEMPO
+ */
+const ACCESS_TOKEN_EXPIRATION = 1000 * 60 * 15; // 15 Minutos
+const REFRESH_TOKEN_EXPIRATION = 1000 * 60 * 60 * 24 * 7; // 7 Días
+
+/**
+ * Configuración de las cookies
  */
 const COOKIE_OPTIONS = {
-    httpOnly: true,                 // No accesible mediante JS del cliente (evita XSS)
-    secure: IS_PRODUCTION,          // Solo se envía en HTTPS
-    sameSite: "strict",             // Protege contra CSRF
-    path: "/",                      // Accesible en todas las rutas
+    httpOnly: true,
+    secure: IS_PRODUCTION,
+    sameSite: "strict",
+    path: "/", 
 };
 
 /**
- * Inicia sesión del usuario
+ * LOGIN
  */
 exports.login = async (req, res, next) => {
     try {
         const { username, password } = req.body;
 
-        // Autenticar y generar tokens
         const { user, accessToken, refreshToken } = await authService.authenticate(
             username,
             password
         );
 
-        // --- 1. Guardar Access Token en Cookie (Corta duración) ---
+        // 1. Access Token
         res.cookie("accessToken", accessToken, {
             ...COOKIE_OPTIONS,
-            maxAge: 1000 * 60 * 15, // 15 minutos en milisegundos
+            maxAge: ACCESS_TOKEN_EXPIRATION,
         });
 
-        // --- 2. Guardar Refresh Token en Cookie (Larga duración) ---
+        // 2. Refresh Token
         res.cookie("refreshToken", refreshToken, {
             ...COOKIE_OPTIONS,
-            maxAge: 1000 * 60 * 60 * 24 * 7, // 7 días en milisegundos
+            maxAge: REFRESH_TOKEN_EXPIRATION,
         });
 
         res.json({
             success: true,
             message: "Login exitoso",
-            user: user,
+            user: user, 
         });
     } catch (err) {
         next(err);
     }
 };
 
+/**
+ * LOGOUT
+ */
 exports.logout = async (req, res, next) => {
     try {
-        // Borrar cookies
-        res.clearCookie("accessToken", {
-            httpOnly: true,
-            secure: IS_PRODUCTION,
-            sameSite: "strict",
-            path: "/",
-        });
 
-        res.clearCookie("refreshToken", {
-            httpOnly: true,
-            secure: IS_PRODUCTION,
-            sameSite: "strict",
-            path: "/",
-        });
+        res.clearCookie("accessToken", COOKIE_OPTIONS);
+        res.clearCookie("refreshToken", COOKIE_OPTIONS);
 
         return res.json({
             success: true,
@@ -74,8 +72,9 @@ exports.logout = async (req, res, next) => {
         next(err);
     }
 };
+
 /**
- * Verifica si el accessToken en cookie es válido → usado al recargar la página
+ * CHECK STATUS
  */
 exports.checkStatus = async (req, res, next) => {
     try {
@@ -85,21 +84,21 @@ exports.checkStatus = async (req, res, next) => {
             return res.status(200).json({ authenticated: false });
         }
 
-        // Verificar y decodificar el token
         const payload = jwtConfig.verify(token);
 
+
         const user = await User.findByPk(payload.id, {
-            include: [{ model: Role }],
+            include: [{ model: Role, as: 'roles' }],
         });
 
         if (!user || user.active === false) {
-            console.log("Usuario no válido o desactivado");
             res.clearCookie("accessToken", COOKIE_OPTIONS);
             res.clearCookie("refreshToken", COOKIE_OPTIONS);
             return res.status(200).json({ authenticated: false });
         }
 
-        const roles = user.Roles.map(r => r.name);
+
+        const roles = user.roles ? user.roles.map(r => r.name) : [];
 
         const userData = {
             id: user.id,
@@ -121,22 +120,26 @@ exports.checkStatus = async (req, res, next) => {
 };
 
 /**
- * Refresca el accessToken usando el refreshToken
+ * REFRESH TOKEN
  */
 exports.refreshToken = async (req, res, next) => {
     try {
         const refreshToken = req.cookies.refreshToken;
 
         if (!refreshToken) {
+            // Usamos unauthorized importado arriba
             throw unauthorized("No hay token de refresco");
         }
 
-        // Verificar refresh token
-        const payload = jwtConfig.verify(refreshToken);
+        let payload;
+        try {
+            payload = jwtConfig.verify(refreshToken);
+        } catch (e) {
+            throw unauthorized("Token de refresco inválido");
+        }
 
-        // Buscar usuario actualizado
         const user = await User.findByPk(payload.id, {
-            include: [{ model: Role }],
+            include: [{ model: Role, as: 'roles' }],
         });
 
         if (!user || user.active === false) {
@@ -145,7 +148,7 @@ exports.refreshToken = async (req, res, next) => {
             throw unauthorized("Usuario no válido");
         }
 
-        const roles = user.Roles.map(r => r.name);
+        const roles = user.roles ? user.roles.map(r => r.name) : [];
 
         const newPayload = {
             id: user.id,
@@ -153,12 +156,12 @@ exports.refreshToken = async (req, res, next) => {
             roles,
         };
 
-        const newAccessToken = jwtConfig.sign(newPayload, ACCESS_TOKEN_EXPIRATION);
+        // Definimos '15m' o usamos ms
+        const newAccessToken = jwtConfig.sign(newPayload, '15m'); 
 
-        // Renovar accessToken (opcional: rotar refresh token si quieres máxima seguridad)
         res.cookie("accessToken", newAccessToken, {
             ...COOKIE_OPTIONS,
-            maxAge: 1000 * 60 * 15, // 15 minutos
+            maxAge: ACCESS_TOKEN_EXPIRATION,
         });
 
         const userData = {

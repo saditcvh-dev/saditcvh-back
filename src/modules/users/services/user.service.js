@@ -37,7 +37,7 @@ exports.createUser = async (data, adminId) => {
     const transaction = await sequelize.transaction();
     try {
         if (data.password) {
-            data.password = await bcrypt.hash(data.password, 10);
+            data.password = await bcrypt.hash(data.password, 12);
         }
         // Crear usuario con auditoría
         const newUser = await User.create({
@@ -67,7 +67,7 @@ exports.updateUser = async (id, data, adminId) => {
         if (!user) throw new Error("Usuario no encontrado");
 
         if (data.password) {
-            data.password = await bcrypt.hash(data.password, 10);
+            data.password = await bcrypt.hash(data.password, 12);
         }
 
         // Actualizar datos
