@@ -15,8 +15,9 @@ const {
     cookieName: "x-csrf-token",
 
     cookieOptions: {
-        httpOnly: false,
-        sameSite: "none",
+        httpOnly: true,
+        sameSite: "strict",
+        path: "/",
         maxAge: 1000 * 60 * 60 * 2, // 2 horas
         secure: process.env.NODE_ENV === "production",
     },

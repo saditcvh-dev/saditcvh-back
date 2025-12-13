@@ -17,49 +17,42 @@ const REFRESH_TOKEN_EXPIRATION = process.env.REFRESH_TOKEN_EXPIRATION || "7d";  
  * @param {string} password
  * @returns {object} { user, accessToken, refreshToken }
  */
-exports.authenticate = async (username, password) => { // <-- CAMBIADO DE email A username
-    // 1. Buscar usuario por username
+// src/modules/auth/services/auth.service.js
+exports.authenticate = async (username, password) => {
     const user = await User.findOne({
-        where: { username }, // <-- FILTRAR POR USERNAME
-       include: [{ model: Role }],
+        where: { username },
+        include: [{ model: Role }],
     });
 
     if (!user || user.active === false) {
-        throw unauthorized("Credenciales inválidas."); // Mensaje genérico por seguridad
+        throw unauthorized("Credenciales inválidas.");
     }
 
-    // 2. Verificar contraseña (bcrypt)
+    // bcrypt.compare ya es timing-safe
     const isValid = await bcrypt.compare(password, user.password);
 
     if (!isValid) {
-        console.log(password);
-        console.log(user.password);
-        console.log(await bcrypt.compare(password, user.password));
-        throw unauthorized("Credenciales inválidas. por contraseña"); // Mensaje genérico por seguridad
+        throw unauthorized("Credenciales inválidas.");
     }
 
-    // 3. Obtener roles para el payload
     const roles = user.Roles.map(role => role.name);
 
-    // 4. Crear Payload JWT
     const payload = {
         id: user.id,
-        username: user.username, // <-- AGREGAR USERNAME AL PAYLOAD
-        roles: roles,
+        username: user.username,
+        roles,
     };
 
-    // 5. Generar Tokens (mantener)
     const accessToken = jwtConfig.sign(payload, ACCESS_TOKEN_EXPIRATION);
     const refreshToken = jwtConfig.sign(payload, REFRESH_TOKEN_EXPIRATION);
 
-    // Excluir la contraseña del objeto de respuesta
     const userData = {
         id: user.id,
-        username: user.username, // <-- AGREGAR USERNAME A LA RESPUESTA
+        username: user.username,
         first_name: user.first_name,
         last_name: user.last_name,
-        email: user.email, // Dejar email por si el frontend lo necesita
-        roles: roles,
+        email: user.email,
+        roles,
     };
 
     return { user: userData, accessToken, refreshToken };

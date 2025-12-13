@@ -31,8 +31,9 @@ app.use(cookieParser());
 app.use(config.csrf.doubleCsrfProtection);
 
 // CSRF token endpoint 
-app.get("/csrf-token", (req, res) => {
-    res.json({ csrfToken: req.csrfToken() });
+app.get("/api/csrf-token", (req, res) => {
+    const token = req.csrfToken();
+    res.json({ csrfToken: token });
 });
 
 // Rutas
