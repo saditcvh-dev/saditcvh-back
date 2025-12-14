@@ -2,9 +2,21 @@ const userService = require("../services/user.service");
 
 exports.getUsers = async (req, res, next) => {
     try {
-        const users = await userService.getAllUsers();
-        res.status(200).json({ success: true, data: users });
-    } catch (err) { next(err); }
+        const result = await userService.getAllUsers(req.query);
+
+        res.status(200).json({
+            success: true,
+            data: result.rows,
+            pagination: {
+                total: result.count,
+                page: result.page,
+                limit: result.limit,
+                totalPages: result.totalPages
+            }
+        });
+    } catch (err) {
+        next(err);
+    }
 };
 
 exports.getUserById = async (req, res, next) => {

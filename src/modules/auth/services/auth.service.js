@@ -21,7 +21,7 @@ const REFRESH_TOKEN_EXPIRATION = process.env.REFRESH_TOKEN_EXPIRATION || "7d";  
 exports.authenticate = async (username, password) => {
     const user = await User.findOne({
         where: { username },
-        include: [{ model: Role }],
+        include: [{ model: Role, as: 'roles' }],
     });
 
     if (!user || user.active === false) {
@@ -35,7 +35,7 @@ exports.authenticate = async (username, password) => {
         throw unauthorized("Credenciales inválidas.");
     }
 
-    const roles = user.Roles.map(role => role.name);
+    const roles = user.roles.map(role => role.name);
 
     const payload = {
         id: user.id,

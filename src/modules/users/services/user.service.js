@@ -1,27 +1,134 @@
-const { sequelize } = require("../../../config/db"); 
+const sequelize = require("../../../config/db");
 const { User, Role, Cargo } = require("../../../database/associations");
 const bcrypt = require("bcryptjs");
+const { Op, fn, col, where } = require("sequelize");
 
 
-exports.getAllUsers = async () => {
-    return await User.findAll({
+exports.getAllUsers = async (query) => {
+    // --------------------
+    // Paginación
+    // --------------------
+    const page = parseInt(query.page) || 1;
+    const limit = parseInt(query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    // --------------------
+    // Filtros
+    // --------------------
+    const whereUser = {};
+
+    if (query.active !== undefined) {
+        whereUser.active = query.active === "true";
+    }
+
+    if (query.cargo_id) {
+        whereUser.cargo_id = query.cargo_id;
+    }
+
+    // --------------------
+    // Búsqueda
+    // --------------------
+    if (query.search) {
+        const search = `%${query.search}%`;
+
+        whereUser[Op.or] = [
+            { first_name: { [Op.iLike]: search } },
+            { last_name: { [Op.iLike]: search } },
+            { second_last_name: { [Op.iLike]: search } },
+            { username: { [Op.iLike]: search } },
+            { email: { [Op.iLike]: search } },
+
+            // Creador
+            where(fn("concat",
+                col("creator.first_name"),
+                " ",
+                col("creator.last_name")
+            ), { [Op.iLike]: search }),
+
+            { "$creator.username$": { [Op.iLike]: search } },
+
+            // Editor
+            where(fn("concat",
+                col("editor.first_name"),
+                " ",
+                col("editor.last_name")
+            ), { [Op.iLike]: search }),
+
+            { "$editor.username$": { [Op.iLike]: search } }
+        ];
+    }
+
+    // --------------------
+    // Ordenamiento
+    // --------------------
+    let order = [["id", "DESC"]];
+
+    if (query.sortBy) {
+        const direction = query.order === "desc" ? "DESC" : "ASC";
+
+        switch (query.sortBy) {
+            case "name":
+                order = [["first_name", direction]];
+                break;
+
+            case "creator":
+                order = [[{ model: User, as: "creator" }, "first_name", direction]];
+                break;
+
+            case "editor":
+                order = [[{ model: User, as: "editor" }, "first_name", direction]];
+                break;
+        }
+    }
+
+    // --------------------
+    // Query final
+    // --------------------
+    const result = await User.findAndCountAll({
+        where: whereUser,
+        distinct: true,
+        subQuery: false,
+        limit,
+        offset,
+        order,
         attributes: { exclude: ["password", "deleted_at"] },
         include: [
-            { 
-                model: Cargo, 
-                as: 'cargo',
-                attributes: ['id', 'nombre'] 
+            {
+                model: Cargo,
+                as: "cargo",
+                attributes: ["id", "nombre"],
+                required: !!query.cargo_id
             },
-            { 
-                model: Role, 
-                as: 'roles',
-                attributes: ['id', 'name'],
-                through: { attributes: [] }
+            {
+                model: Role,
+                as: "roles",
+                attributes: ["id", "name"],
+                through: { attributes: [] },
+                where: query.role_id ? { id: query.role_id } : undefined,
+                required: !!query.role_id
+            },
+            {
+                model: User,
+                as: "creator",
+                attributes: ["id", "username", "first_name", "last_name"]
+            },
+            {
+                model: User,
+                as: "editor",
+                attributes: ["id", "username", "first_name", "last_name"]
             }
-        ],
-        order: [['id', 'DESC']]
+        ]
     });
+
+    return {
+        rows: result.rows,
+        count: result.count,
+        page,
+        limit,
+        totalPages: Math.ceil(result.count / limit)
+    };
 };
+
 
 exports.getUserById = async (id) => {
     return await User.findByPk(id, {
