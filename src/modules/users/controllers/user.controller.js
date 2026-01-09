@@ -80,13 +80,39 @@ exports.updateUser = async (req, res, next) => {
     } catch (err) { return next(err); }
 };
 
+exports.updatePermissionsBatch = async (req, res, next) => {
+    try {
+        const { userId } = req.params;
+        const { changes } = req.body;
+
+        if (!changes || !Array.isArray(changes)) {
+            return res.status(400).json({ success: false, message: "Formato de datos incorrecto." });
+        }
+
+        await userService.updatePermissionsBatch(userId, changes, req);
+        
+        return res.status(200).json({
+            success: true,
+            message: "Matriz de permisos actualizada correctamente."
+        });
+    } catch (err) { return next(err); }
+};
+
+
+exports.getUserPermissionsRaw = async (req, res, next) => {
+    try {
+        const data = await userService.getUserPermissionsRaw(req.params.id);
+        return res.status(200).json({ success: true, data });
+    } catch (err) { return next(err); }
+};
+
+
 exports.updateUserPermission = async (req, res, next) => {
     try {
         const { userId } = req.params;
-        // Obtenemos los datos. A veces el front manda null, nos aseguramos de cacharlo.
         const { municipioId, permissionId, value } = req.body; 
 
-        // VALIDACIÓN DE SEGURIDAD
+        // Validación básica
         if (!municipioId || !permissionId) {
             return res.status(400).json({ 
                 success: false, 
@@ -103,32 +129,6 @@ exports.updateUserPermission = async (req, res, next) => {
     } catch (err) { 
         return next(err); 
     }
-};
-
-exports.updatePermissionsBatch = async (req, res, next) => {
-    try {
-        const { userId } = req.params;
-        const { changes } = req.body; // Array de cambios
-
-        if (!changes || !Array.isArray(changes)) {
-            return res.status(400).json({ success: false, message: "Formato de datos incorrecto." });
-        }
-
-        await userService.updatePermissionsBatch(userId, changes, req);
-        
-        return res.status(200).json({
-            success: true,
-            message: "Permisos actualizados correctamente."
-        });
-    } catch (err) { return next(err); }
-};
-
-
-exports.getUserPermissionsRaw = async (req, res, next) => {
-    try {
-        const data = await userService.getUserPermissionsRaw(req.params.id);
-        return res.status(200).json({ success: true, data });
-    } catch (err) { return next(err); }
 };
 
 
