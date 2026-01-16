@@ -13,50 +13,6 @@ class AutorizacionService {
         this.tiposAutorizacionModel = TiposAutorizacion;
         this.documentoModel = Documento;
     }
-
-    // Crear autorización
-    crearAutorizacion = async (autorizacionData) => {
-        try {
-          
-            if (autorizacionData.municipioId) {
-                const municipio = await this.municipioModel.findByPk(autorizacionData.municipioId);
-                if (!municipio) {
-                    throw {
-                        status: 404,
-                        message: 'Municipio no encontrado'
-                    };
-                }
-            }
-
-            if (autorizacionData.modalidadId) {
-                const modalidad = await this.modalidadModel.findByPk(autorizacionData.modalidadId);
-                if (!modalidad) {
-                    throw {
-                        status: 404,
-                        message: 'Modalidad no encontrada'
-                    };
-                }
-            }
-
-            if (autorizacionData.tipoId) {
-                const tipo = await this.tiposAutorizacionModel.findByPk(autorizacionData.tipoId);
-                if (!tipo) {
-                    throw {
-                        status: 404,
-                        message: 'Tipo de autorización no encontrado'
-                    };
-                }
-            }
-
-            const autorizacion = await this.autorizacionModel.create(autorizacionData);
-
-            return autorizacion;
-        } catch (error) {
-            console.error('Error en crearAutorizacion:', error);
-            throw error;
-        }
-    };
-
     // Obtener todas las autorizaciones con paginación
     obtenerAutorizaciones = async (options = {}) => {
         try {
@@ -78,7 +34,8 @@ class AutorizacionService {
             if (filters.modalidadId) whereClause.modalidadId = filters.modalidadId;
             if (filters.tipoId) whereClause.tipoId = filters.tipoId;
             if (filters.activo !== undefined) whereClause.activo = filters.activo;
-
+            console.log("search****")
+            console.log(search)
             // Búsqueda por texto
             if (search) {
                 whereClause[Op.or] = [
@@ -130,11 +87,137 @@ class AutorizacionService {
         }
     };
 
+    // Crear autorización
+    crearAutorizacion = async (autorizacionData) => {
+        try {
+
+            if (autorizacionData.municipioId) {
+                const municipio = await this.municipioModel.findByPk(autorizacionData.municipioId);
+                if (!municipio) {
+                    throw {
+                        status: 404,
+                        message: 'Municipio no encontrado'
+                    };
+                }
+            }
+
+            if (autorizacionData.modalidadId) {
+                const modalidad = await this.modalidadModel.findByPk(autorizacionData.modalidadId);
+                if (!modalidad) {
+                    throw {
+                        status: 404,
+                        message: 'Modalidad no encontrada'
+                    };
+                }
+            }
+
+            if (autorizacionData.tipoId) {
+                const tipo = await this.tiposAutorizacionModel.findByPk(autorizacionData.tipoId);
+                if (!tipo) {
+                    throw {
+                        status: 404,
+                        message: 'Tipo de autorización no encontrado'
+                    };
+                }
+            }
+
+            const autorizacion = await this.autorizacionModel.create(autorizacionData);
+
+            return autorizacion;
+        } catch (error) {
+            console.error('Error en crearAutorizacion:', error);
+            throw error;
+        }
+    };
+    buscarAutorizaciones = async (opciones = {}) => {
+        try {
+            const { search, campos = [], exactMatch = false } = opciones;
+
+            if (!search) {
+                throw {
+                    status: 400,
+                    message: 'Término de búsqueda requerido'
+                };
+            }
+
+            const searchCondition = exactMatch
+                ? search
+                : { [Op.iLike]: `%${search}%` };
+
+            const whereClause = {
+                [Op.or]: []
+            };
+
+            const validFields = [
+                'numeroAutorizacion',
+                'nombreCarpeta',
+                'solicitante',
+                'estado'
+            ];
+
+            // 🔍 Búsqueda por campos específicos
+            if (campos.length > 0) {
+                campos.forEach(campo => {
+                    if (validFields.includes(campo)) {
+                        whereClause[Op.or].push({
+                            [campo]: searchCondition
+                        });
+                    }
+                });
+            } 
+            // 🔍 Búsqueda general
+            else {
+                whereClause[Op.or] = [
+                    { numeroAutorizacion: searchCondition },
+                    { nombreCarpeta: searchCondition },
+                    { solicitante: searchCondition },
+                    { '$municipio.nombre$': searchCondition },
+                    { '$modalidad.nombre$': searchCondition },
+                    { '$tipoAutorizacion.nombre$': searchCondition }
+                ];
+            }
+
+            const autorizaciones = await this.autorizacionModel.findAll({
+                where: whereClause,
+                include: [
+                    {
+                        model: this.municipioModel,
+                        as: 'municipio',
+                        attributes: ['id', 'num', 'nombre'],
+                        required: false
+                    },
+                    {
+                        model: this.modalidadModel,
+                        as: 'modalidad',
+                        attributes: ['id', 'num', 'nombre'],
+                        required: false
+                    },
+                    {
+                        model: this.tiposAutorizacionModel, // ✅ CORRECTO
+                        as: 'tipoAutorizacion',
+                        attributes: ['id', 'nombre', 'abreviatura'],
+                        required: false
+                    }
+                ],
+                limit: 50,
+                order: [['id', 'DESC']],
+                attributes: { exclude: ['createdAt', 'updatedAt'] }
+            });
+
+            return autorizaciones;
+
+        } catch (error) {
+            console.error('Error en buscarAutorizaciones:', error);
+            throw error;
+        }
+    };
+
+
     // Obtener autorización por ID
     obtenerAutorizacionPorId = async (id, includeRelations = false) => {
         try {
             const include = [];
-            
+
             if (includeRelations) {
                 include.push(
                     {
@@ -233,7 +316,7 @@ class AutorizacionService {
             // Verificar si se está cambiando el número y ya existe
             if (autorizacionData.numeroAutorizacion && autorizacionData.numeroAutorizacion !== autorizacion.numeroAutorizacion) {
                 const existeNumero = await this.autorizacionModel.findOne({
-                    where: { 
+                    where: {
                         numeroAutorizacion: autorizacionData.numeroAutorizacion,
                         id: { [Op.ne]: id }
                     }
@@ -264,7 +347,7 @@ class AutorizacionService {
     eliminarAutorizacion = async (id) => {
         try {
             const autorizacion = await this.autorizacionModel.findByPk(id);
-            
+
             if (!autorizacion) {
                 throw {
                     status: 404,
@@ -273,7 +356,7 @@ class AutorizacionService {
             }
 
             await autorizacion.destroy();
-            
+
             return true;
         } catch (error) {
             console.error('Error en eliminarAutorizacion:', error);
@@ -285,7 +368,7 @@ class AutorizacionService {
     cambiarEstadoAutorizacion = async (id, activo) => {
         try {
             const autorizacion = await this.autorizacionModel.findByPk(id);
-            
+
             if (!autorizacion) {
                 throw {
                     status: 404,
@@ -294,7 +377,7 @@ class AutorizacionService {
             }
 
             await autorizacion.update({ activo });
-            
+
             return autorizacion;
         } catch (error) {
             console.error('Error en cambiarEstadoAutorizacion:', error);
@@ -325,11 +408,11 @@ class AutorizacionService {
 
             // Obtener estadísticas
             const total = await this.autorizacionModel.count({ where: whereClause });
-            const activas = await this.autorizacionModel.count({ 
-                where: { ...whereClause, activo: true } 
+            const activas = await this.autorizacionModel.count({
+                where: { ...whereClause, activo: true }
             });
-            const inactivas = await this.autorizacionModel.count({ 
-                where: { ...whereClause, activo: false } 
+            const inactivas = await this.autorizacionModel.count({
+                where: { ...whereClause, activo: false }
             });
 
             // Obtear por tipo de estado
@@ -376,73 +459,7 @@ class AutorizacionService {
         }
     };
 
-    // Búsqueda avanzada
-    buscarAutorizaciones = async (opciones = {}) => {
-        try {
-            const { search, campos = [], exactMatch = false } = opciones;
-            
-            if (!search) {
-                throw {
-                    status: 400,
-                    message: 'Término de búsqueda requerido'
-                };
-            }
 
-            const whereClause = {};
-            const searchCondition = exactMatch ? search : { [Op.iLike]: `%${search}%` };
-
-            // Si se especifican campos, buscar solo en esos campos
-            if (campos.length > 0) {
-                const orConditions = [];
-                
-                campos.forEach(campo => {
-                    const validFields = [
-                        'numeroAutorizacion',
-                        'nombreCarpeta',
-                        'solicitante',
-                        'estado'
-                    ];
-                    
-                    if (validFields.includes(campo)) {
-                        orConditions.push({ [campo]: searchCondition });
-                    }
-                });
-
-                if (orConditions.length > 0) {
-                    whereClause[Op.or] = orConditions;
-                }
-            } else {
-                whereClause[Op.or] = [
-                    { numeroAutorizacion: searchCondition },
-                    { nombreCarpeta: searchCondition },
-                    { solicitante: searchCondition }
-                ];
-            }
-
-            const autorizaciones = await this.autorizacionModel.findAll({
-                where: whereClause,
-                include: [
-                    {
-                        model: this.municipioModel,
-                        as: 'municipio',
-                        attributes: ['nombre']
-                    },
-                    {
-                        model: this.modalidadModel,
-                        as: 'modalidad',
-                        attributes: ['nombre']
-                    }
-                ],
-                limit: 50, 
-                attributes: { exclude: ['createdAt', 'updatedAt'] }
-            });
-
-            return autorizaciones;
-        } catch (error) {
-            console.error('Error en buscarAutorizaciones:', error);
-            throw error;
-        }
-    };
 }
 
 module.exports = AutorizacionService;

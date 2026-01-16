@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const tiposAutorizacionController = require('../controllers/tipos-autorizacion.controller');
+const { protect } = require("../../auth/middlewares/auth.middleware");
 
-// Middleware de validación (puedes ajustarlo según tus necesidades)
+router.use(protect);
 const validateTipoAutorizacion = (req, res, next) => {
     const { nombre, abreviatura, id } = req.body;
 

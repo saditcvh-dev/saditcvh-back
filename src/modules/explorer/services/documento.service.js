@@ -438,27 +438,46 @@ class DocumentoService {
 
     // Obtener archivo digital
     async obtenerArchivoDigital(archivoId) {
-        try {
-            const archivo = await ArchivoDigital.findByPk(archivoId, {
+        const archivo = await ArchivoDigital.findByPk(archivoId, {
+            include: [{
+                model: Documento,
+                as: 'documento',
                 include: [{
-                    model: Documento,
-                    as: 'documento',
-                    include: [{
-                        model: Autorizacion,
-                        as: 'autorizacion'
-                    }]
+                    model: Autorizacion,
+                    as: 'autorizacion'
                 }]
-            });
+            }]
+        });
 
-            if (!archivo) {
-                throw new Error('Archivo digital no encontrado');
-            }
-
-            return archivo;
-        } catch (error) {
-            throw new Error(`Error al obtener archivo digital: ${error.message}`);
+        if (!archivo) {
+            throw new Error('Archivo digital no encontrado');
         }
+
+        return archivo;
     }
+
+    // async obtenerArchivoDigital(archivoId) {
+    //     try {
+    //         const archivo = await ArchivoDigital.findByPk(archivoId, {
+    //             include: [{
+    //                 model: Documento,
+    //                 as: 'documento',
+    //                 include: [{
+    //                     model: Autorizacion,
+    //                     as: 'autorizacion'
+    //                 }]
+    //             }]
+    //         });
+
+    //         if (!archivo) {
+    //             throw new Error('Archivo digital no encontrado');
+    //         }
+
+    //         return archivo;
+    //     } catch (error) {
+    //         throw new Error(`Error al obtener archivo digital: ${error.message}`);
+    //     }
+    // }
 }
 
 module.exports = new DocumentoService();

@@ -1,7 +1,9 @@
 const express = require('express');
 const AutorizacionController = require('../controllers/autorizacion.controller');
 const router = express.Router();
+const { protect } = require("../../auth/middlewares/auth.middleware");
 
+router.use(protect);
 // Instanciar controlador
 const autorizacionController = new AutorizacionController();
 
