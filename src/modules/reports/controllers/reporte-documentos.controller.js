@@ -44,6 +44,7 @@ class DigitalizationReportController {
       console.log('💾 Documentos digitalizados:', report.metadata?.digitalized_documents || 0);
       console.log('📄 Tamaño total archivos (MB):', report.metadata?.total_file_size_mb?.toFixed(2) || 0);
       console.log('📖 Total páginas digitalizadas:', report.metadata?.total_pages_digitalized || 0);
+      console.log('🚌 Modalidades encontradas:', report.metadata?.distribution_by_modalidad?.length || 0);
       
       doc = new PDFDocument({
         size: 'A4',
@@ -52,7 +53,7 @@ class DigitalizationReportController {
           Title: 'Reporte de Digitalización - STCH',
           Author: 'Sistema de Gestión Documental STCH',
           Subject: 'Reporte completo de digitalización de documentos y archivos',
-          Keywords: 'STCH, digitalización, reporte, documentos, archivos, estadísticas, OCR'
+          Keywords: 'STCH, digitalización, reporte, documentos, archivos, estadísticas, OCR, modalidad, transporte'
         }
       });
       
@@ -62,7 +63,7 @@ class DigitalizationReportController {
       
       doc.pipe(res);
       
-      // Colores institucionales (mismos que el ejemplo)
+      // Colores institucionales
       const colors = {
         primary: '#8B1E3F',
         secondary: '#D4AF37',
@@ -80,7 +81,7 @@ class DigitalizationReportController {
       };
       
       // ==============================================
-      // ENCABEZADO OFICIAL (IDÉNTICO AL EJEMPLO)
+      // ENCABEZADO OFICIAL
       // ==============================================
       
       doc.rect(0, 0, doc.page.width, 130)
@@ -172,7 +173,7 @@ class DigitalizationReportController {
       doc.moveDown(1.5);
       
       // ==============================================
-      // ESTADÍSTICAS DEL REPORTE (ACTUALIZADAS)
+      // I. RESUMEN ESTADÍSTICO DE DIGITALIZACIÓN
       // ==============================================
       
       doc.fontSize(16)
@@ -305,14 +306,78 @@ class DigitalizationReportController {
          .font('Helvetica-Bold')
          .text(`${totalPaginas} páginas`, 180, storageY + 24);
       
-      // Si hay top digitalizadores
-      if (report.metadata?.top_digitalizers && report.metadata.top_digitalizers.length > 0) {
-        doc.moveDown(2);
+      doc.y = storageY + 40;
+      
+      // ==============================================
+      // II. DISTRIBUCIÓN POR TIPO DE AUTORIZACIÓN
+      // ==============================================
+      
+      if (report.metadata?.documents_by_authorization_type && report.metadata.documents_by_authorization_type.length > 0) {
+        if (doc.y > 550) {
+          doc.addPage();
+          doc.y = 40;
+        }
         
-        doc.fontSize(12)
+        doc.moveDown(1.5);
+        
+        doc.fontSize(16)
            .fillColor(colors.primary)
            .font('Helvetica-Bold')
-           .text('Top Digitalizadores:', 40, doc.y);
+           .text('II. DISTRIBUCIÓN POR TIPO DE AUTORIZACIÓN', 40, doc.y);
+        
+        doc.moveTo(40, doc.y + 3)
+           .lineTo(400, doc.y + 3)
+           .lineWidth(2)
+           .stroke(colors.secondary);
+        
+        doc.moveDown(0.8);
+        
+        const authStartY = doc.y;
+        report.metadata.documents_by_authorization_type.forEach((authType, index) => {
+          const y = authStartY + (index * 16);
+          const totalByType = authType.count || 0;
+          const percentage = totalDocs > 0 ? (totalByType / totalDocs) * 100 : 0;
+          const barLength = totalDocs > 0 ? (totalByType / totalDocs) * 200 : 0;
+          
+          doc.fontSize(9)
+             .fillColor(colors.darkText)
+             .font('Helvetica-Bold')
+             .text(`${authType.type} (${authType.abbreviation})`, 40, y, { width: 120 });
+          
+          const barColors = [colors.primary, colors.success];
+          doc.rect(170, y + 3, barLength, 10)
+             .fill(barColors[index % barColors.length]);
+          
+          doc.fontSize(9)
+             .fillColor(colors.lightText)
+             .font('Helvetica')
+             .text(`${totalByType} (${percentage.toFixed(1)}%)`, 380, y, { width: 80, align: 'right' });
+        });
+        
+        doc.y = authStartY + (report.metadata.documents_by_authorization_type.length * 16) + 20;
+      }
+      
+      // ==============================================
+      // III. TOP DIGITALIZADORES
+      // ==============================================
+      
+      if (report.metadata?.top_digitalizers && report.metadata.top_digitalizers.length > 0) {
+        if (doc.y > 550) {
+          doc.addPage();
+          doc.y = 40;
+        }
+        
+        doc.moveDown(1.5);
+        
+        doc.fontSize(16)
+           .fillColor(colors.primary)
+           .font('Helvetica-Bold')
+           .text('III. TOP DIGITALIZADORES', 40, doc.y);
+        
+        doc.moveTo(40, doc.y + 3)
+           .lineTo(300, doc.y + 3)
+           .lineWidth(2)
+           .stroke(colors.secondary);
         
         doc.moveDown(0.8);
         
@@ -344,82 +409,88 @@ class DigitalizationReportController {
         doc.y = topStartY + (report.metadata.top_digitalizers.length * 16) + 15;
       }
       
-      // DISTRIBUCIÓN POR TIPO DE AUTORIZACIÓN
-      if (report.metadata?.documents_by_authorization_type && report.metadata.documents_by_authorization_type.length > 0) {
-        doc.moveDown(1.5);
-        
-        doc.fontSize(12)
-           .fillColor(colors.primary)
-           .font('Helvetica-Bold')
-           .text('Distribución por Tipo de Autorización:', 40, doc.y);
-        
-        doc.moveDown(0.8);
-        
-        const authStartY = doc.y;
-        report.metadata.documents_by_authorization_type.forEach((authType, index) => {
-          const y = authStartY + (index * 16);
-          const totalByType = authType.count || 0;
-          const percentage = totalDocs > 0 ? (totalByType / totalDocs) * 100 : 0;
-          const barLength = totalDocs > 0 ? (totalByType / totalDocs) * 200 : 0;
-          
-          doc.fontSize(9)
-             .fillColor(colors.darkText)
-             .font('Helvetica-Bold')
-             .text(`${authType.type} (${authType.abbreviation})`, 40, y, { width: 120 });
-          
-          const barColors = [colors.primary, colors.success];
-          doc.rect(170, y + 3, barLength, 10)
-             .fill(barColors[index % barColors.length]);
-          
-          doc.fontSize(9)
-             .fillColor(colors.lightText)
-             .font('Helvetica')
-             .text(`${totalByType} (${percentage.toFixed(1)}%)`, 380, y, { width: 80, align: 'right' });
-        });
-        
-        doc.y = authStartY + (report.metadata.documents_by_authorization_type.length * 16) + 20;
-      }
+      // ==============================================
+      // IV. DISTRIBUCIÓN POR MODALIDAD DE TRANSPORTE
+      // ==============================================
       
-      // DISTRIBUCIÓN POR MODALIDAD
-      if (report.metadata?.documents_by_modalidad && report.metadata.documents_by_modalidad.length > 0) {
+      if (report.metadata?.distribution_by_modalidad && report.metadata.distribution_by_modalidad.length > 0) {
         // Verificar si hay espacio suficiente
-        if (doc.y > 550) {
+        if (doc.y > 500) {
           doc.addPage();
           doc.y = 40;
         }
         
         doc.moveDown(1.5);
         
-        doc.fontSize(12)
+        doc.fontSize(16)
            .fillColor(colors.primary)
            .font('Helvetica-Bold')
-           .text('Distribución por Modalidad:', 40, doc.y);
+           .text('IV. DISTRIBUCIÓN POR MODALIDAD DE TRANSPORTE', 40, doc.y);
+        
+        doc.moveTo(40, doc.y + 3)
+           .lineTo(500, doc.y + 3)
+           .lineWidth(2)
+           .stroke(colors.secondary);
+        
+        doc.moveDown(1.5);
+        
+        // GRÁFICO DE BARRAS POR MODALIDAD (TODAS)
+        doc.moveDown(0.5);
+        
+        doc.fontSize(14)
+           .fillColor(colors.primary)
+           .font('Helvetica-Bold')
+           .text('Distribución de documentos por modalidad:', 40, doc.y);
         
         doc.moveDown(0.8);
         
-        const modalidadStartY = doc.y;
-        report.metadata.documents_by_modalidad.forEach((modalidad, index) => {
-          const y = modalidadStartY + (index * 16);
-          const totalByModalidad = modalidad.count || 0;
-          const percentage = totalDocs > 0 ? (totalByModalidad / totalDocs) * 100 : 0;
-          const barLength = totalDocs > 0 ? (totalByModalidad / totalDocs) * 200 : 0;
+        // Usar TODAS las modalidades ordenadas por cantidad de documentos
+        const todasModalidades = [...report.metadata.distribution_by_modalidad]
+          .sort((a, b) => b.total_documentos - a.total_documentos);
+        
+        const maxDocumentosModalidad = Math.max(...todasModalidades.map(m => m.total_documentos || 0));
+        const chartStartY = doc.y + 10;
+        const chartWidth = 400;
+        const barHeight = 14;
+        const barSpacing = 4;
+        
+        // Mostrar todas las modalidades
+        todasModalidades.forEach((modalidad, index) => {
+          const barY = chartStartY + (index * (barHeight + barSpacing));
+          const barLength = maxDocumentosModalidad > 0 ? 
+            (modalidad.total_documentos / maxDocumentosModalidad) * chartWidth : 0;
           
-          doc.fontSize(9)
+          // Nombre de modalidad (abreviado si es necesario)
+          const modalidadNombre = modalidad.modalidad_nombre || `Mod ${modalidad.modalidad_num}`;
+          const nombreDisplay = modalidadNombre.length > 25 ? modalidadNombre.substring(0, 25) + '...' : modalidadNombre;
+          
+          doc.fontSize(7)
+             .fillColor(colors.darkText)
+             .font('Helvetica')
+             .text(nombreDisplay, 40, barY + 3, { width: 120 });
+          
+          // Barra
+          const barColors = [colors.primary, colors.success, colors.info, colors.warning, colors.purple];
+          const barColor = barColors[index % barColors.length];
+          
+          doc.rect(165, barY, barLength, barHeight)
+             .fill(barColor);
+          
+          // Valor numérico
+          doc.fontSize(8)
              .fillColor(colors.darkText)
              .font('Helvetica-Bold')
-             .text(`${modalidad.modalidad}`, 40, y, { width: 150 });
+             .text(modalidad.total_documentos.toString(), 170 + barLength, barY + 3);
           
-          const barColors = [colors.primary, colors.success, colors.info, colors.warning, colors.purple];
-          doc.rect(200, y + 3, barLength, 10)
-             .fill(barColors[index % barColors.length]);
-          
-          doc.fontSize(9)
-             .fillColor(colors.lightText)
+          // Porcentaje de digitalización
+          const porcentajeDigitalizacionModalidad = modalidad.porcentaje_digitalizacion || '0.0';
+          doc.fontSize(7)
+             .fillColor(colors.success)
              .font('Helvetica')
-             .text(`${totalByModalidad} (${percentage.toFixed(1)}%)`, 410, y, { width: 80, align: 'right' });
+             .text(`${porcentajeDigitalizacionModalidad}%`, 210 + barLength, barY + 3);
         });
         
-        doc.y = modalidadStartY + (report.metadata.documents_by_modalidad.length * 16) + 20;
+        doc.y = chartStartY + (todasModalidades.length * (barHeight + barSpacing)) + 20;
       }
       
       doc.moveDown(1.5);
@@ -430,7 +501,7 @@ class DigitalizationReportController {
       doc.moveDown(1.5);
       
       // ==============================================
-      // LISTADO DE DOCUMENTOS
+      // V. LISTADO DE DOCUMENTOS DIGITALIZADOS
       // ==============================================
 
       if (doc.y > 550) {
@@ -441,7 +512,7 @@ class DigitalizationReportController {
       doc.fontSize(16)
          .fillColor(colors.primary)
          .font('Helvetica-Bold')
-         .text('II. LISTADO DE DOCUMENTOS DIGITALIZADOS', 40, doc.y);
+         .text('V. LISTADO DE DOCUMENTOS DIGITALIZADOS', 40, doc.y);
 
       doc.moveTo(40, doc.y + 3)
          .lineTo(400, doc.y + 3)
@@ -450,8 +521,9 @@ class DigitalizationReportController {
 
       doc.moveDown(2);
 
-      const headers = ['#', 'Número', 'Título', 'Tipo', 'Modalidad', 'Estado', 'Versión', 'Tamaño (MB)'];
-      const colWidths = [25, 70, 120, 50, 70, 70, 50, 60];
+      // Quitamos la columna 'Número'
+      const headers = ['#', 'Título', 'Tipo', 'Modalidad', 'Estado', 'Versión', 'Tamaño (MB)'];
+      const colWidths = [25, 160, 50, 80, 70, 50, 60]; // Más ancho para Título
       const totalTableWidth = colWidths.reduce((a, b) => a + b, 0);
 
       // Función para dibujar encabezado
@@ -503,7 +575,7 @@ class DigitalizationReportController {
             doc.fontSize(16)
                .fillColor(colors.primary)
                .font('Helvetica-Bold')
-               .text(`II. LISTADO DE DOCUMENTOS DIGITALIZADOS (Continuación)`, 40, doc.y);
+               .text(`V. LISTADO DE DOCUMENTOS DIGITALIZADOS (Continuación)`, 40, doc.y);
             
             doc.moveTo(40, doc.y + 3)
                .lineTo(450, doc.y + 3)
@@ -534,21 +606,18 @@ class DigitalizationReportController {
            .font('Helvetica')
            .text((docIndex + 1).toString(), 45, actualRowY + 8, { width: 15, align: 'center' });
         
-        // Número de documento
-        const docNumber = documento.numero_documento || 'N/A';
-        const docNumberDisplay = docNumber.length > 10 ? docNumber.substring(0, 10) + '...' : docNumber;
+        // Título (más ancho y en lugar del número)
+        const titulo = documento.titulo || documento.descripcion || 'Sin título';
+        // Mostramos el número del documento si no hay título específico
+        const tituloDisplay = titulo === 'Sin título' && documento.numero_documento 
+          ? documento.numero_documento
+          : titulo;
+          
+        const tituloTruncado = tituloDisplay.length > 25 ? tituloDisplay.substring(0, 25) + '...' : tituloDisplay;
         doc.fontSize(8)
            .fillColor(colors.primary)
            .font('Helvetica-Bold')
-           .text(docNumberDisplay, 75, actualRowY + 8, { width: 60 });
-        
-        // Título
-        const titulo = documento.titulo || documento.descripcion || 'Sin título';
-        const tituloDisplay = titulo.length > 15 ? titulo.substring(0, 15) + '...' : titulo;
-        doc.fontSize(7)
-           .fillColor(colors.darkText)
-           .font('Helvetica')
-           .text(tituloDisplay, 150, actualRowY + 8, { width: 110 });
+           .text(tituloTruncado, 70, actualRowY + 8, { width: 150 });
         
         // Tipo de autorización
         const tipo = documento.tipo_autorizacion_abreviatura || 'N/A';
@@ -556,15 +625,15 @@ class DigitalizationReportController {
         doc.fontSize(8)
            .fillColor(tipoColor)
            .font('Helvetica-Bold')
-           .text(tipo, 275, actualRowY + 8, { width: 40, align: 'center' });
+           .text(tipo, 235, actualRowY + 8, { width: 40, align: 'center' });
         
         // Modalidad
         const modalidad = documento.modalidad || 'N/A';
-        const modalidadDisplay = modalidad.length > 12 ? modalidad.substring(0, 12) + '...' : modalidad;
+        const modalidadDisplay = modalidad.length > 15 ? modalidad.substring(0, 15) + '...' : modalidad;
         doc.fontSize(7)
            .fillColor(colors.purple)
            .font('Helvetica')
-           .text(modalidadDisplay, 320, actualRowY + 8, { width: 60, align: 'center' });
+           .text(modalidadDisplay, 290, actualRowY + 8, { width: 70, align: 'center' });
         
         // Estado
         const estado = documento.estado_digitalizacion || 'pendiente';
@@ -585,14 +654,14 @@ class DigitalizationReportController {
         doc.fontSize(8)
            .fillColor(estadoColor)
            .font('Helvetica-Bold')
-           .text(estadoText, 395, actualRowY + 8, { width: 60, align: 'center' });
+           .text(estadoText, 375, actualRowY + 8, { width: 60, align: 'center' });
         
         // Versión
         const version = documento.version_documento || 1;
         doc.fontSize(8)
            .fillColor(colors.purple)
            .font('Helvetica-Bold')
-           .text(`v${version}`, 460, actualRowY + 8, { width: 40, align: 'center' });
+           .text(`v${version}`, 450, actualRowY + 8, { width: 40, align: 'center' });
         
         // Tamaño
         const tamanoMB = documento.digitalizacion_info?.total_tamano_mb || '0.00';
@@ -600,7 +669,7 @@ class DigitalizationReportController {
         doc.fontSize(8)
            .fillColor(tamanoColor)
            .font('Helvetica')
-           .text(tamanoMB, 515, actualRowY + 8, { width: 50, align: 'center' });
+           .text(tamanoMB, 505, actualRowY + 8, { width: 50, align: 'center' });
         
         // Borde inferior
         doc.moveTo(40, actualRowY + 26)
@@ -619,7 +688,7 @@ class DigitalizationReportController {
       doc.y = tableStartY + (currentRowIndex * 26) + 25;
 
       // ==============================================
-      // DETALLE POR DOCUMENTO
+      // VI. DETALLE POR DOCUMENTO
       // ==============================================
 
       // Verificar si hay suficiente espacio
@@ -631,7 +700,7 @@ class DigitalizationReportController {
       doc.fontSize(16)
          .fillColor(colors.primary)
          .font('Helvetica-Bold')
-         .text('III. DETALLE POR DOCUMENTO', 40, doc.y);
+         .text('VI. DETALLE POR DOCUMENTO', 40, doc.y);
 
       doc.moveTo(40, doc.y + 3)
          .lineTo(280, doc.y + 3)
@@ -648,11 +717,18 @@ class DigitalizationReportController {
           doc.y = 40;
         }
         
-        // Título del documento
+        // Título del documento - Usar el título real o número si no hay título
+        let tituloDocumento = documento.titulo || documento.descripcion || 'Sin título';
+        
+        // Si el título es genérico o vacío, usar el número del documento
+        if (tituloDocumento === 'Sin título' || tituloDocumento === '' || tituloDocumento.trim().length === 0) {
+          tituloDocumento = documento.numero_documento || `Documento ${documento.documento_id}`;
+        }
+        
         doc.fontSize(13)
            .fillColor(colors.primary)
            .font('Helvetica-Bold')
-           .text(`${docIndex + 1}. ${documento.numero_documento || 'Documento sin número'}`, 40, doc.y);
+           .text(`${docIndex + 1}. ${tituloDocumento}`, 40, doc.y);
         
         doc.moveTo(40, doc.y + 3)
            .lineTo(250, doc.y + 3)
@@ -664,7 +740,7 @@ class DigitalizationReportController {
         // Información básica en tarjetas
         let cardsStartY = doc.y;
         const infoCardWidth = (doc.page.width - 100) / 2;
-        const infoCardHeight = 95; // Aumentada para incluir páginas
+        const infoCardHeight = 95;
         
         // Verificar espacio para tarjetas
         if (cardsStartY + infoCardHeight + 60 > doc.page.height - 100) {
@@ -674,7 +750,7 @@ class DigitalizationReportController {
           doc.fontSize(13)
              .fillColor(colors.primary)
              .font('Helvetica-Bold')
-             .text(`${docIndex + 1}. ${documento.numero_documento || 'Documento sin número'}`, 40, doc.y);
+             .text(`${docIndex + 1}. ${tituloDocumento}`, 40, doc.y);
           
           doc.moveTo(40, doc.y + 3)
              .lineTo(250, doc.y + 3)
@@ -701,9 +777,9 @@ class DigitalizationReportController {
            .fillColor(colors.darkText)
            .font('Helvetica');
         
-        // Título
-        const titulo = documento.titulo || 'Sin título';
-        const tituloTruncado = titulo.length > 25 ? titulo.substring(0, 25) + '...' : titulo;
+        // Título - Mostrar número de documento en la línea de título
+        const tituloDisplay = documento.titulo || documento.descripcion || documento.numero_documento || 'Sin título';
+        const tituloTruncado = tituloDisplay.length > 25 ? tituloDisplay.substring(0, 25) + '...' : tituloDisplay;
         doc.text(`Título: ${tituloTruncado}`, 50, cardsStartY + 20);
         
         // Tipo de autorización
@@ -712,7 +788,8 @@ class DigitalizationReportController {
         
         // Modalidad
         const modalidad = documento.modalidad || 'No especificada';
-        doc.text(`Modalidad: ${modalidad}`, 50, cardsStartY + 40);
+        const modalidadNum = documento.modalidad_numero ? ` (${documento.modalidad_numero})` : '';
+        doc.text(`Modalidad: ${modalidad}${modalidadNum}`, 50, cardsStartY + 40);
         
         // Estado
         const estado = documento.estado_digitalizacion || 'pendiente';
@@ -736,6 +813,13 @@ class DigitalizationReportController {
           doc.fontSize(7)
              .fillColor(colors.gray)
              .text(`Páginas: ${documento.paginas}`, 50, cardsStartY + 70);
+        }
+        
+        // Número de documento (si existe y no es igual al título)
+        if (documento.numero_documento && documento.numero_documento !== tituloDisplay) {
+          doc.fontSize(7)
+             .fillColor(colors.gray)
+             .text(`Número: ${documento.numero_documento}`, 50, cardsStartY + 80);
         }
         
         // Tarjeta 2: Información de digitalización
@@ -910,7 +994,7 @@ class DigitalizationReportController {
       });
       
       // ==============================================
-      // OBSERVACIONES FINALES (ACTUALIZADAS)
+      // VII. OBSERVACIONES Y CONCLUSIONES
       // ==============================================
       
       if (doc.y > 500) {
@@ -923,7 +1007,7 @@ class DigitalizationReportController {
       doc.fontSize(16)
          .fillColor(colors.primary)
          .font('Helvetica-Bold')
-         .text('IV. OBSERVACIONES Y CONCLUSIONES', 40, doc.y);
+         .text('VII. OBSERVACIONES Y CONCLUSIONES', 40, doc.y);
       
       doc.moveTo(40, doc.y + 3)
          .lineTo(400, doc.y + 3)
@@ -973,10 +1057,33 @@ class DigitalizationReportController {
         ? report.metadata.documents_by_authorization_type.map(a => `${a.type}: ${a.count}`).join(', ')
         : 'No disponible';
       
-      // Distribución por modalidad
-      const distribucionModalidad = report.metadata?.documents_by_modalidad
-        ? report.metadata.documents_by_modalidad.map(m => `${m.modalidad}: ${m.count}`).join(', ')
-        : 'No disponible';
+      // Distribución por modalidad (TODAS)
+      let distribucionModalidad = 'No disponible';
+      let modalidadTop = null;
+      let modalidadMenor = null;
+      
+      if (report.metadata?.distribution_by_modalidad && report.metadata.distribution_by_modalidad.length > 0) {
+        // Encontrar modalidad con más documentos (usando TODAS)
+        const todasModalidades = [...report.metadata.distribution_by_modalidad]
+          .sort((a, b) => b.total_documentos - a.total_documentos);
+        
+        modalidadTop = todasModalidades[0];
+        modalidadMenor = todasModalidades[todasModalidades.length - 1];
+        
+        // Mostrar todas las modalidades en observaciones (limitado a 8 para no hacer muy largo)
+        const modalidadesMostrar = todasModalidades.slice(0, 8);
+        distribucionModalidad = modalidadesMostrar
+          .map(m => `${m.modalidad_nombre}: ${m.total_documentos}`)
+          .join(', ');
+        
+        // Si hay más de 8, agregar "y X más"
+        if (todasModalidades.length > 8) {
+          distribucionModalidad += `, y ${todasModalidades.length - 8} más`;
+        }
+      }
+      
+      // Totales por modalidad
+      const totalsModalidad = report.metadata?.totalsByModalidad || {};
       
       const observaciones = [
         `1. Total de documentos analizados: ${totalDocs}`,
@@ -991,13 +1098,18 @@ class DigitalizationReportController {
         `10. Top digitalizador: ${topDigitalizador ? `${topDigitalizador.full_name} (${topDigitalizador.total_digitalized} docs)` : 'No disponible'}`,
         `11. Versiones por documento: Promedio ${promedioVersiones}`,
         `12. Distribución por tipo de autorización: ${distribucionTipo}`,
-        `13. Distribución por modalidad: ${distribucionModalidad}`,
-        `14. Fecha de corte del reporte: ${new Date().toLocaleDateString('es-ES')}`,
-        `15. Filtros aplicados: ${Object.keys(filters)
+        `13. Total modalidades analizadas: ${report.metadata?.distribution_by_modalidad?.length || 0}`,
+        `14. Modalidad con más documentos: ${modalidadTop ? `${modalidadTop.modalidad_nombre} (${modalidadTop.total_documentos} docs, ${modalidadTop.porcentaje_digitalizacion}%)` : 'N/A'}`,
+        `15. Modalidad con menos documentos: ${modalidadMenor ? `${modalidadMenor.modalidad_nombre} (${modalidadMenor.total_documentos} docs, ${modalidadMenor.porcentaje_digitalizacion}%)` : 'N/A'}`,
+        `16. Porcentaje total digitalización por modalidad: ${totalsModalidad.porcentaje_total_digitalizacion || '0.00'}%`,
+        `17. Tamaño total por modalidad: ${(totalsModalidad.total_tamano_mb || 0).toFixed(2)} MB`,
+        `18. Distribución por modalidad: ${distribucionModalidad}`,
+        `19. Fecha de corte del reporte: ${new Date().toLocaleDateString('es-ES')}`,
+        `20. Filtros aplicados: ${Object.keys(filters)
           .filter(k => filters[k] !== undefined && filters[k] !== '' && k !== 'limit' && k !== 'offset' && k !== 'include_files')
           .map(k => `${k}: ${filters[k]}`)
           .join(', ') || 'Ninguno'}`,
-        `16. Recomendaciones: ${porcentajeCompletado < 70 ? 'Se requiere acelerar el proceso de digitalización' : 'Progreso adecuado en digitalización'}`
+        `21. Recomendaciones: ${porcentajeCompletado < 70 ? 'Se requiere acelerar el proceso de digitalización, especialmente en modalidades con bajo porcentaje.' : 'Progreso adecuado en digitalización.'}`
       ];
       
       observaciones.forEach((obs) => {
@@ -1062,6 +1174,7 @@ class DigitalizationReportController {
       console.log(`📖 Total páginas: ${totalPaginas}`);
       console.log(`💽 Tamaño total: ${totalSizeMB} MB`);
       console.log(`👥 Digitalizadores top: ${report.metadata?.top_digitalizers?.length || 0}`);
+      console.log(`🚌 Modalidades analizadas: ${report.metadata?.distribution_by_modalidad?.length || 0}`);
       console.log(`📋 Documentos incluidos: ${report.data.length}`);
       
     } catch (error) {
@@ -1187,6 +1300,38 @@ class DigitalizationReportController {
                success: false,
                message: 'Error interno al obtener últimos documentos',
                error: error.message
+         });
+      }
+   }
+
+   // NUEVO: OBTENER REPORTE DETALLADO POR MODALIDAD
+   async getReporteModalidadDetallado(req, res) {
+      try {
+         console.log('🚌 SOLICITUD DE REPORTE POR MODALIDAD');
+         console.log('Timestamp:', new Date().toISOString());
+         
+         const filters = {
+            start_date: req.query.start_date,
+            end_date: req.query.end_date,
+            estado_digitalizacion: req.query.estado_digitalizacion
+         };
+         
+         const result = await DigitalizationReportService.getModalidadDetailedReport(filters);
+         
+         if (result.success) {
+            console.log(`✅ Reporte por modalidad generado: ${result.data.length} modalidades`);
+            res.json(result);
+         } else {
+            console.error('❌ Error generando reporte por modalidad:', result.message);
+            res.status(500).json(result);
+         }
+         
+      } catch (error) {
+         console.error('❌ Error en getReporteModalidadDetallado:', error);
+         res.status(500).json({
+            success: false,
+            message: 'Error interno al generar reporte por modalidad',
+            error: error.message
          });
       }
    }

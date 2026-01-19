@@ -195,6 +195,7 @@ class DigitalizationReportService {
                     documents_by_status: stats.documentsByStatus,
                     documents_by_authorization_type: stats.documentsByAuthorizationType,
                     documents_by_modalidad: stats.documentsByModalidad,
+                    distribution_by_modalidad: stats.distributionByModalidad, // NUEVO: Distribución detallada por modalidad
                     top_digitalizers: stats.topDigitalizers,
                     pagination: {
                         limit: parseInt(limit),
@@ -211,7 +212,7 @@ class DigitalizationReportService {
     }
 
     // ============================
-    // ESTADÍSTICAS DEL REPORTE (CORREGIDAS)
+    // ESTADÍSTICAS DEL REPORTE (ACTUALIZADAS)
     // ============================
     async getReportStatistics(filters = {}) {
         try {
@@ -331,7 +332,7 @@ class DigitalizationReportService {
                 type: QueryTypes.SELECT
             });
 
-            // DISTRIBUCIÓN POR MODALIDAD
+            // DISTRIBUCIÓN POR MODALIDAD (BÁSICA)
             const modalidadQuery = `
                 SELECT 
                     m.nombre as modalidad_name,
@@ -347,6 +348,38 @@ class DigitalizationReportService {
             `;
 
             const modalidadResults = await sequelize.query(modalidadQuery, {
+                replacements: params,
+                type: QueryTypes.SELECT
+            });
+
+            // DISTRIBUCIÓN DETALLADA POR MODALIDAD (NUEVO)
+            const distributionByModalidadQuery = `
+                WITH modalidad_stats AS (
+                    SELECT 
+                        m.id as modalidad_id,
+                        m.num as modalidad_num,
+                        m.nombre as modalidad_nombre,
+                        COUNT(DISTINCT d.id) as total_documentos,
+                        COUNT(DISTINCT CASE WHEN ad.id IS NOT NULL THEN d.id END) as documentos_digitalizados,
+                        COUNT(DISTINCT CASE WHEN ad.id IS NULL THEN d.id END) as documentos_pendientes,
+                        SUM(CASE WHEN ad.id IS NOT NULL THEN ad.tamano_bytes ELSE 0 END) as total_bytes,
+                        SUM(CASE WHEN ad.id IS NOT NULL THEN ad.total_paginas ELSE 0 END) as total_paginas,
+                        COUNT(DISTINCT CASE WHEN ad.id IS NOT NULL THEN ad.digitalizado_por END) as digitalizadores_unicos,
+                        AVG(CASE WHEN ad.id IS NOT NULL THEN ad.tamano_bytes ELSE NULL END) as promedio_bytes,
+                        COUNT(DISTINCT CASE WHEN ad.estado_ocr = 'procesado' THEN ad.id END) as archivos_ocr_procesado
+                    FROM documentos d
+                    LEFT JOIN autorizaciones a ON d.autorizacion_id = a.id
+                    LEFT JOIN modalidad m ON a.modalidad_id = m.id
+                    LEFT JOIN archivos_digitales ad ON d.id = ad.documento_id
+                    ${whereClause}
+                    GROUP BY m.id, m.num, m.nombre
+                )
+                SELECT * FROM modalidad_stats
+                WHERE total_documentos > 0
+                ORDER BY total_documentos DESC, modalidad_num ASC
+            `;
+
+            const distributionByModalidadResults = await sequelize.query(distributionByModalidadQuery, {
                 replacements: params,
                 type: QueryTypes.SELECT
             });
@@ -401,6 +434,12 @@ class DigitalizationReportService {
             const digitalizedDocs = parseInt(stats.digitalized_count) || 0;
             const progressPercentage = totalDocs > 0 ? (digitalizedDocs / totalDocs * 100).toFixed(2) : 0;
 
+            // CALCULAR TOTALES POR MODALIDAD
+            const totalDocumentosModalidad = distributionByModalidadResults.reduce((sum, item) => sum + (parseInt(item.total_documentos) || 0), 0);
+            const totalDigitalizadosModalidad = distributionByModalidadResults.reduce((sum, item) => sum + (parseInt(item.documentos_digitalizados) || 0), 0);
+            const totalPendientesModalidad = distributionByModalidadResults.reduce((sum, item) => sum + (parseInt(item.documentos_pendientes) || 0), 0);
+            const totalBytesModalidad = distributionByModalidadResults.reduce((sum, item) => sum + (parseFloat(item.total_bytes) || 0), 0);
+
             return {
                 totalDocuments: totalDocs,
                 digitalizedDocuments: digitalizedDocs,
@@ -427,6 +466,38 @@ class DigitalizationReportService {
                     count: parseInt(item.document_count) || 0
                 })),
                 
+                // NUEVO: Distribución detallada por modalidad
+                distributionByModalidad: distributionByModalidadResults.map(item => ({
+                    modalidad_id: item.modalidad_id,
+                    modalidad_num: item.modalidad_num,
+                    modalidad_nombre: item.modalidad_nombre || `Modalidad ${item.modalidad_num}`,
+                    total_documentos: parseInt(item.total_documentos) || 0,
+                    documentos_digitalizados: parseInt(item.documentos_digitalizados) || 0,
+                    documentos_pendientes: parseInt(item.documentos_pendientes) || 0,
+                    porcentaje_digitalizacion: item.total_documentos > 0 ? 
+                        ((parseInt(item.documentos_digitalizados) / parseInt(item.total_documentos)) * 100).toFixed(2) : 0,
+                    total_bytes: parseFloat(item.total_bytes) || 0,
+                    total_tamano_mb: (parseFloat(item.total_bytes) || 0) / (1024 * 1024),
+                    promedio_bytes: parseFloat(item.promedio_bytes) || 0,
+                    promedio_tamano_mb: (parseFloat(item.promedio_bytes) || 0) / (1024 * 1024),
+                    total_paginas: parseInt(item.total_paginas) || 0,
+                    digitalizadores_unicos: parseInt(item.digitalizadores_unicos) || 0,
+                    archivos_ocr_procesado: parseInt(item.archivos_ocr_procesado) || 0,
+                    porcentaje_ocr: item.documentos_digitalizados > 0 ? 
+                        ((parseInt(item.archivos_ocr_procesado) / parseInt(item.documentos_digitalizados)) * 100).toFixed(2) : 0
+                })),
+                
+                // Totales por modalidad para resumen
+                totalsByModalidad: {
+                    total_documentos: totalDocumentosModalidad,
+                    total_digitalizados: totalDigitalizadosModalidad,
+                    total_pendientes: totalPendientesModalidad,
+                    total_bytes: totalBytesModalidad,
+                    total_tamano_mb: totalBytesModalidad / (1024 * 1024),
+                    porcentaje_total_digitalizacion: totalDocumentosModalidad > 0 ? 
+                        ((totalDigitalizadosModalidad / totalDocumentosModalidad) * 100).toFixed(2) : 0
+                },
+                
                 topDigitalizers: topDigitalizers.map(d => ({
                     user_id: d.user_id,
                     username: d.username,
@@ -449,6 +520,15 @@ class DigitalizationReportService {
                 documentsByStatus: [],
                 documentsByAuthorizationType: [],
                 documentsByModalidad: [],
+                distributionByModalidad: [],
+                totalsByModalidad: {
+                    total_documentos: 0,
+                    total_digitalizados: 0,
+                    total_pendientes: 0,
+                    total_bytes: 0,
+                    total_tamano_mb: 0,
+                    porcentaje_total_digitalizacion: 0
+                },
                 topDigitalizers: []
             };
         }
@@ -873,7 +953,196 @@ class DigitalizationReportService {
                 data: []
             };
         }
-    }    
+    }
+    
+    /**
+     * Obtiene reporte detallado por modalidad (NUEVO MÉTODO)
+     */
+    async getModalidadDetailedReport(filters = {}) {
+        try {
+            const whereConditions = ["d.deleted_at IS NULL", "d.version_actual = true"];
+            const params = [];
+
+            if (filters.start_date) {
+                whereConditions.push("d.created_at >= ?");
+                params.push(filters.start_date);
+            }
+
+            if (filters.end_date) {
+                whereConditions.push("d.created_at <= ?");
+                params.push(filters.end_date);
+            }
+
+            if (filters.estado_digitalizacion) {
+                whereConditions.push("d.estado_digitalizacion = ?");
+                params.push(filters.estado_digitalizacion);
+            }
+
+            const whereClause = whereConditions.length
+                ? `WHERE ${whereConditions.join(" AND ")}`
+                : "";
+
+            // Consulta detallada por modalidad
+            const modalidadDetailedQuery = `
+                WITH modalidad_data AS (
+                    SELECT 
+                        m.id as modalidad_id,
+                        m.num as modalidad_num,
+                        m.nombre as modalidad_nombre,
+                        COUNT(DISTINCT d.id) as total_documentos,
+                        COUNT(DISTINCT CASE WHEN ad.id IS NOT NULL THEN d.id END) as documentos_digitalizados,
+                        COUNT(DISTINCT CASE WHEN ad.id IS NULL THEN d.id END) as documentos_pendientes,
+                        COUNT(DISTINCT CASE WHEN d.estado_digitalizacion = 'completado' THEN d.id END) as documentos_completados,
+                        COUNT(DISTINCT CASE WHEN d.estado_digitalizacion = 'en_proceso' THEN d.id END) as documentos_en_proceso,
+                        COUNT(DISTINCT CASE WHEN d.estado_digitalizacion = 'pendiente' THEN d.id END) as documentos_pendientes_estado,
+                        SUM(CASE WHEN ad.id IS NOT NULL THEN ad.tamano_bytes ELSE 0 END) as total_bytes,
+                        SUM(CASE WHEN ad.id IS NOT NULL THEN ad.total_paginas ELSE 0 END) as total_paginas,
+                        COUNT(DISTINCT CASE WHEN ad.id IS NOT NULL THEN ad.digitalizado_por END) as digitalizadores_unicos,
+                        AVG(CASE WHEN ad.id IS NOT NULL THEN ad.tamano_bytes ELSE NULL END) as promedio_bytes,
+                        COUNT(DISTINCT CASE WHEN ad.estado_ocr = 'procesado' THEN ad.id END) as archivos_ocr_procesado,
+                        COUNT(DISTINCT CASE WHEN ad.estado_ocr = 'pendiente' THEN ad.id END) as archivos_ocr_pendiente,
+                        COUNT(DISTINCT CASE WHEN ad.estado_ocr = 'en_proceso' THEN ad.id END) as archivos_ocr_en_proceso,
+                        MIN(CASE WHEN ad.id IS NOT NULL THEN ad.fecha_digitalizacion ELSE NULL END) as primera_digitalizacion,
+                        MAX(CASE WHEN ad.id IS NOT NULL THEN ad.fecha_digitalizacion ELSE NULL END) as ultima_digitalizacion
+                    FROM documentos d
+                    LEFT JOIN autorizaciones a ON d.autorizacion_id = a.id
+                    LEFT JOIN modalidad m ON a.modalidad_id = m.id
+                    LEFT JOIN archivos_digitales ad ON d.id = ad.documento_id
+                    ${whereClause}
+                    GROUP BY m.id, m.num, m.nombre
+                )
+                SELECT * FROM modalidad_data
+                WHERE total_documentos > 0
+                ORDER BY total_documentos DESC, modalidad_num ASC
+            `;
+
+            const modalidadResults = await sequelize.query(modalidadDetailedQuery, {
+                replacements: params,
+                type: QueryTypes.SELECT
+            });
+
+            // Totales generales
+            const totals = {
+                total_documentos: 0,
+                documentos_digitalizados: 0,
+                documentos_pendientes: 0,
+                documentos_completados: 0,
+                documentos_en_proceso: 0,
+                total_bytes: 0,
+                total_paginas: 0,
+                digitalizadores_unicos: new Set()
+            };
+
+            // Procesar resultados
+            const processedData = modalidadResults.map(item => {
+                const totalDocs = parseInt(item.total_documentos) || 0;
+                const digitalizados = parseInt(item.documentos_digitalizados) || 0;
+                const pendientes = parseInt(item.documentos_pendientes) || 0;
+                const totalBytes = parseFloat(item.total_bytes) || 0;
+                const totalPaginas = parseInt(item.total_paginas) || 0;
+                const ocrProcesado = parseInt(item.archivos_ocr_procesado) || 0;
+
+                // Acumular totales
+                totals.total_documentos += totalDocs;
+                totals.documentos_digitalizados += digitalizados;
+                totals.documentos_pendientes += pendientes;
+                totals.documentos_completados += parseInt(item.documentos_completados) || 0;
+                totals.documentos_en_proceso += parseInt(item.documentos_en_proceso) || 0;
+                totals.total_bytes += totalBytes;
+                totals.total_paginas += totalPaginas;
+
+                return {
+                    modalidad_id: item.modalidad_id,
+                    modalidad_num: item.modalidad_num,
+                    modalidad_nombre: item.modalidad_nombre,
+                    total_documentos: totalDocs,
+                    documentos_digitalizados: digitalizados,
+                    documentos_pendientes: pendientes,
+                    documentos_completados: parseInt(item.documentos_completados) || 0,
+                    documentos_en_proceso: parseInt(item.documentos_en_proceso) || 0,
+                    documentos_pendientes_estado: parseInt(item.documentos_pendientes_estado) || 0,
+                    porcentaje_digitalizacion: totalDocs > 0 ? ((digitalizados / totalDocs) * 100).toFixed(2) : 0,
+                    porcentaje_completado: totalDocs > 0 ? ((parseInt(item.documentos_completados) || 0) / totalDocs * 100).toFixed(2) : 0,
+                    total_bytes: totalBytes,
+                    total_tamano_mb: (totalBytes / (1024 * 1024)).toFixed(2),
+                    promedio_bytes: parseFloat(item.promedio_bytes) || 0,
+                    promedio_tamano_mb: ((parseFloat(item.promedio_bytes) || 0) / (1024 * 1024)).toFixed(2),
+                    total_paginas: totalPaginas,
+                    digitalizadores_unicos: parseInt(item.digitalizadores_unicos) || 0,
+                    archivos_ocr_procesado: ocrProcesado,
+                    archivos_ocr_pendiente: parseInt(item.archivos_ocr_pendiente) || 0,
+                    archivos_ocr_en_proceso: parseInt(item.archivos_ocr_en_proceso) || 0,
+                    porcentaje_ocr: digitalizados > 0 ? ((ocrProcesado / digitalizados) * 100).toFixed(2) : 0,
+                    primera_digitalizacion: item.primera_digitalizacion,
+                    ultima_digitalizacion: item.ultima_digitalizacion,
+                    tiempo_transcurrido: item.primera_digitalizacion ? 
+                        this.calcularTiempoTranscurrido(item.primera_digitalizacion, item.ultima_digitalizacion) : null
+                };
+            });
+
+            // Calcular porcentajes generales
+            const porcentajeDigitalizacionTotal = totals.total_documentos > 0 ? 
+                ((totals.documentos_digitalizados / totals.total_documentos) * 100).toFixed(2) : 0;
+            
+            const porcentajeCompletadoTotal = totals.total_documentos > 0 ? 
+                ((totals.documentos_completados / totals.total_documentos) * 100).toFixed(2) : 0;
+
+            return {
+                success: true,
+                data: processedData,
+                metadata: {
+                    total_modalidades: processedData.length,
+                    totals: {
+                        total_documentos: totals.total_documentos,
+                        documentos_digitalizados: totals.documentos_digitalizados,
+                        documentos_pendientes: totals.documentos_pendientes,
+                        documentos_completados: totals.documentos_completados,
+                        documentos_en_proceso: totals.documentos_en_proceso,
+                        porcentaje_digitalizacion_total: parseFloat(porcentajeDigitalizacionTotal),
+                        porcentaje_completado_total: parseFloat(porcentajeCompletadoTotal),
+                        total_bytes: totals.total_bytes,
+                        total_tamano_mb: (totals.total_bytes / (1024 * 1024)).toFixed(2),
+                        total_paginas: totals.total_paginas,
+                        digitalizadores_unicos_total: totals.digitalizadores_unicos.size
+                    },
+                    generated_at: new Date().toISOString()
+                }
+            };
+
+        } catch (error) {
+            console.error('❌ Error en getModalidadDetailedReport:', error);
+            return {
+                success: false,
+                message: 'Error al obtener reporte detallado por modalidad',
+                error: error.message,
+                data: []
+            };
+        }
+    }
+
+    /**
+     * Calcula el tiempo transcurrido entre dos fechas
+     */
+    calcularTiempoTranscurrido(fechaInicio, fechaFin) {
+        if (!fechaInicio || !fechaFin) return null;
+        
+        const inicio = new Date(fechaInicio);
+        const fin = new Date(fechaFin);
+        const diffMs = fin - inicio;
+        const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        
+        if (diffDias < 1) return 'Menos de 1 día';
+        if (diffDias === 1) return '1 día';
+        if (diffDias < 30) return `${diffDias} días`;
+        
+        const diffMeses = Math.floor(diffDias / 30);
+        if (diffMeses === 1) return '1 mes';
+        if (diffMeses < 12) return `${diffMeses} meses`;
+        
+        const diffAnios = Math.floor(diffDias / 365);
+        return diffAnios === 1 ? '1 año' : `${diffAnios} años`;
+    }
+
 }
 
 module.exports = new DigitalizationReportService();

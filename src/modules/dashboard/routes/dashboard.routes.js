@@ -83,6 +83,33 @@ router.get('/estadisticas/tipos', async (req, res) => {
     return await DashboardController.getEstadisticasPorTipo(req, res);
 });
 
+// 8. ESTADÍSTICAS POR MODALIDAD (GRÁFICA DE BARRAS/CIRCULAR)
+router.get('/estadisticas/modalidad', async (req, res) => {
+    console.log('🚌 SOLICITUD DE ESTADÍSTICAS POR MODALIDAD');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('Query params:', req.query);
+    
+    return await DashboardController.getEstadisticasPorModalidad(req, res);
+});
+
+// 9. ESTADÍSTICAS POR MUNICIPIO (GRÁFICA DE MAPA/BARRAS)
+router.get('/estadisticas/municipio', async (req, res) => {
+    console.log('🗺️ SOLICITUD DE ESTADÍSTICAS POR MUNICIPIO');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('Query params:', req.query);
+    
+    return await DashboardController.getEstadisticasPorMunicipio(req, res);
+});
+
+// 10. ESTADÍSTICAS DETALLADAS POR MODALIDAD (CON FILTROS)
+router.get('/estadisticas/modalidad/detallada', async (req, res) => {
+    console.log('📊 SOLICITUD DE ESTADÍSTICAS DETALLADAS POR MODALIDAD');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('Filtros:', req.query);
+    
+    return await DashboardController.getEstadisticasModalidadDetallada(req, res);
+});
+
 // ==============================================
 // RUTA DE PRUEBA Y ESTADO DEL SERVICIO
 // ==============================================

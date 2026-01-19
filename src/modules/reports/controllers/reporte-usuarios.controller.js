@@ -627,119 +627,148 @@ class UsersReportController {
       doc.y = cardsStartY + infoCardHeight + 12;
       
       // Resto del código permanece igual...
-      // SECCIÓN DE PERMISOS DE MUNICIPIOS
-      if (user.permissions && user.permissions.length > 0) {
-         // Verificar espacio para título de permisos
-         if (doc.y + 25 > doc.page.height - 100) {
-            doc.addPage();
-            doc.y = 40;
-         }
-         
-         // Título permisos
-         doc.fontSize(11)
-            .fillColor(colors.primary)
-            .font('Helvetica-Bold')
-            .text('Permisos asignados:', 40, doc.y);
-         
-         let currentY = doc.y + 8;
-         
-         // Agrupar permisos por municipio
-         const permisosPorMunicipio = {};
-         user.permissions.forEach(perm => {
-            const municipioNombre = perm.municipio_nombre || `Municipio ${perm.municipio_id}`;
-            if (!permisosPorMunicipio[municipioNombre]) {
-            permisosPorMunicipio[municipioNombre] = [];
-            }
-            permisosPorMunicipio[municipioNombre].push(perm);
+// En la sección "Permisos asignados:" reemplaza este código:
+
+// SECCIÓN DE PERMISOS DE MUNICIPIOS
+if (user.permissions && user.permissions.length > 0) {
+  // Verificar espacio para título de permisos
+  if (doc.y + 30 > doc.page.height - 100) {
+    doc.addPage();
+    doc.y = 40;
+  }
+  
+  // Título permisos
+  doc.fontSize(11)
+     .fillColor(colors.primary)
+     .font('Helvetica-Bold')
+     .text('Permisos asignados:', 40, doc.y);
+  
+  let currentY = doc.y + 10;
+  
+  // Agrupar permisos por municipio
+  const permisosPorMunicipio = {};
+  user.permissions.forEach(perm => {
+    const municipioNombre = perm.municipio_nombre || `Municipio ${perm.municipio_id}`;
+    if (!permisosPorMunicipio[municipioNombre]) {
+      permisosPorMunicipio[municipioNombre] = new Set(); // Usar Set para evitar duplicados
+    }
+    const permNameSpanish = traducirPermiso(perm.permission_name);
+    if (permNameSpanish) {
+      permisosPorMunicipio[municipioNombre].add(permNameSpanish);
+    }
+  });
+  
+  // Función para traducir permisos
+  function traducirPermiso(permName) {
+    if (!permName) return null;
+    
+    const traducciones = {
+      'view': 'ver',
+      'ver': 'ver',
+      'download': 'descargar',
+      'descargar': 'descargar',
+      'print': 'imprimir',
+      'imprimir': 'imprimir',
+      'edit': 'editar',
+      'editar': 'editar',
+      'delete': 'eliminar',
+      'eliminar': 'eliminar',
+      'concesion': 'concesión',
+      'concesión': 'concesión',
+      'permiso': 'permiso'
+    };
+    
+    return traducciones[permName.toLowerCase()] || permName;
+  }
+  
+  // Obtener municipios ordenados
+  const municipios = Object.keys(permisosPorMunicipio).sort((a, b) => 
+    a.localeCompare(b, 'es', { sensitivity: 'base' })
+  );
+  
+  // Configurar tabla de permisos
+  const municipioWidth = 90; // Ancho para cada columna de municipio
+  const maxMunicipiosPorFila = 5; // Máximo municipios por fila
+  const lineHeight = 9; // Altura de cada línea
+  const paddingTop = 3; // Espacio arriba del municipio
+  
+  // Dividir municipios en filas
+  for (let i = 0; i < municipios.length; i += maxMunicipiosPorFila) {
+    const municipiosFila = municipios.slice(i, i + maxMunicipiosPorFila);
+    
+    // Verificar espacio para esta fila
+    const maxPermisosEnFila = Math.max(...municipiosFila.map(m => Array.from(permisosPorMunicipio[m]).length));
+    const alturaFila = (maxPermisosEnFila + 1) * lineHeight + paddingTop + 5; // +1 para nombre municipio
+    
+    if (currentY + alturaFila > doc.page.height - 100) {
+      doc.addPage();
+      doc.y = 40;
+      currentY = doc.y + 10;
+      
+      // Retitular en nueva página
+      doc.fontSize(11)
+         .fillColor(colors.primary)
+         .font('Helvetica-Bold')
+         .text('Permisos asignados (continuación):', 40, doc.y);
+      
+      currentY = doc.y + 10;
+    }
+    
+    // Dibujar línea divisoria de fila
+    doc.moveTo(40, currentY - 2)
+       .lineTo(doc.page.width - 40, currentY - 2)
+       .lineWidth(0.3)
+       .stroke(colors.lightGray);
+    
+    // Dibujar nombres de municipios en la fila
+    municipiosFila.forEach((municipio, colIndex) => {
+      const xPos = 40 + (colIndex * municipioWidth);
+      
+      // Nombre del municipio (truncar si es muy largo)
+      const nombreMostrar = municipio.length > 15 ? municipio.substring(0, 15) + '...' : municipio;
+      
+      doc.fontSize(9)
+         .fillColor(colors.primary)
+         .font('Helvetica-Bold')
+         .text(nombreMostrar, xPos, currentY + paddingTop, {
+           width: municipioWidth - 5,
+           ellipsis: true
          });
-         
-         // Obtener municipios ordenados
-         const municipios = Object.keys(permisosPorMunicipio).sort((a, b) => 
-            a.localeCompare(b, 'es', { sensitivity: 'base' })
-         );
-         
-         // Mostrar permisos con espaciado controlado
-         municipios.forEach((municipio) => {
-            const permisosDelMunicipio = permisosPorMunicipio[municipio];
-            
-            // Verificar espacio para este municipio
-            if (currentY + 20 > doc.page.height - 100) {
-            doc.addPage();
-            doc.y = 40;
-            currentY = doc.y + 8;
-            }
-            
-            // Mostrar municipio
-            doc.fontSize(9)
-               .fillColor(colors.darkText)
-               .font('Helvetica-Bold')
-               .text(`• ${municipio}`, 45, currentY);
-            
-            // Mostrar permisos en lista compacta
-            let permY = currentY + 10;
-            
-            permisosDelMunicipio.forEach((perm) => {
-            // Verificar espacio para cada permiso
-            if (permY > doc.page.height - 100) {
-               doc.addPage();
-               doc.y = 40;
-               permY = doc.y + 10;
-            }
-            
-            const permName = perm.permission_name || 'Sin nombre';
-            let permNameSpanish = permName;
-            switch(permName.toLowerCase()) {
-               case 'view': 
-               case 'ver':
-                  permNameSpanish = 'ver'; 
-                  break;
-               case 'download': 
-               case 'descargar':
-                  permNameSpanish = 'descargar'; 
-                  break;
-               case 'print': 
-               case 'imprimir':
-                  permNameSpanish = 'imprimir'; 
-                  break;
-               case 'edit': 
-               case 'editar':
-                  permNameSpanish = 'editar'; 
-                  break;
-               case 'delete': 
-               case 'eliminar':
-                  permNameSpanish = 'eliminar'; 
-                  break;
-               default: 
-                  permNameSpanish = permName;
-            }
-            
-            doc.fontSize(8)
-               .fillColor(colors.lightText)
-               .font('Helvetica')
-               .text(`  - ${permNameSpanish}`, 55, permY);
-            
-            permY += 9;
-            });
-            
-            currentY = permY + 4;
-         });
-         
-         doc.y = currentY;
-         
-      } else {
-         // Sin permisos
-         if (doc.y + 15 > doc.page.height - 100) {
-            doc.addPage();
-            doc.y = 40;
-         }
-         
-         doc.fontSize(9)
-            .fillColor(colors.gray)
-            .font('Helvetica')
-            .text('Sin permisos de municipio asignados.', 40, doc.y);
-         
-         doc.y += 12;
-      }
+      
+      // Listar permisos debajo de cada municipio
+      const permisos = Array.from(permisosPorMunicipio[municipio]).sort();
+      permisos.forEach((perm, permIndex) => {
+        const permY = currentY + paddingTop + lineHeight + (permIndex * lineHeight);
+        
+        doc.fontSize(8)
+           .fillColor(colors.lightText)
+           .font('Helvetica')
+           .text(`• ${perm}`, xPos + 2, permY, {
+             width: municipioWidth - 10
+           });
+      });
+    });
+    
+    // Actualizar posición Y para siguiente fila
+    currentY += alturaFila + 5;
+  }
+  
+  doc.y = currentY;
+  
+} else {
+  // Sin permisos
+  if (doc.y + 15 > doc.page.height - 100) {
+    doc.addPage();
+    doc.y = 40;
+  }
+  
+  doc.fontSize(9)
+     .fillColor(colors.gray)
+     .font('Helvetica')
+     .text('Sin permisos de municipio asignados.', 40, doc.y);
+  
+  doc.y += 12;
+}
       
       // Línea divisoria entre usuarios
       if (userIndex < report.data.length - 1) {

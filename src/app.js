@@ -9,7 +9,6 @@ const userRoutes = require("./modules/users/routes/user.routes");
 const roleRoutes = require("./modules/roles/routes/roles.routes");
 const cargoRoutes = require("./modules/cargo/routes/cargo.routes");
 const reporteUsuariosRoutes = require('./modules/reports/routes/reporte-usuarios.routes');
-const ejemploRoutes = require('./modules/reports/routes/ejemplo.routes');
 const dashboardRoutes = require('./modules/dashboard/routes/dashboard.routes');
 const DigitalizationReportService = require('./modules/reports/routes/reporte-documentos.routes');
 const municipioRoutes = require("./modules/municipios/routes/municipio.routes");
@@ -49,16 +48,13 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
-// ==============================================
-// CSRF - CON EXCLUSIÓN PARA REPORTES
-// ==============================================
+
 app.use((req, res, next) => {
-  // Excluir rutas de reportes de la validación CSRF
   if (req.path.startsWith('/api/reports') || req.path.startsWith('/api/reportes')) {
     console.log(`✅ Saltando CSRF para: ${req.path}`);
     return next();
   }
-  // Para otras rutas, aplicar CSRF normalmente
+
   config.csrf.doubleCsrfProtection(req, res, next);
 });
 
@@ -71,9 +67,6 @@ app.get("/api/csrf-token", (req, res) => {
 // ==============================================
 // RUTAS
 // ==============================================
-
-// Ruta de ejemplo (sin autenticación para pruebas)
-app.use('/api/reports', ejemploRoutes);
 app.use('/api/reports/reporte-usuarios', reporteUsuariosRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports/reporte-digitalizacion', DigitalizationReportService);

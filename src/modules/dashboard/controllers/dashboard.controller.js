@@ -386,6 +386,112 @@ class DashboardController {
             });
         }
     }
+
+    /**
+     * Obtiene estadísticas por modalidad para gráficas
+     */
+    async getEstadisticasPorModalidad(req, res) {
+        try {
+            console.log('🚌 Procesando solicitud de estadísticas por modalidad...');
+            const startTime = Date.now();
+            
+            const result = await DashboardService.getEstadisticasPorModalidad();
+            const processingTime = Date.now() - startTime;
+            
+            console.log(`✅ Estadísticas por modalidad generadas en ${processingTime}ms`);
+            
+            if (result.success) {
+                result.metadata = {
+                    ...result.metadata,
+                    processing_time_ms: processingTime,
+                    request_timestamp: new Date().toISOString(),
+                    filters_applied: req.query || 'ninguno'
+                };
+                res.json(result);
+            } else {
+                res.status(500).json(result);
+            }
+        } catch (error) {
+            console.error('❌ Error en DashboardController.getEstadisticasPorModalidad:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error al obtener estadísticas por modalidad',
+                error: error.message,
+                timestamp: new Date().toISOString()
+            });
+        }
+    }
+
+    /**
+     * Obtiene estadísticas por municipio para gráficas
+     */
+    async getEstadisticasPorMunicipio(req, res) {
+        try {
+            console.log('🗺️ Procesando solicitud de estadísticas por municipio...');
+            const startTime = Date.now();
+            
+            const result = await DashboardService.getEstadisticasPorMunicipio();
+            const processingTime = Date.now() - startTime;
+            
+            console.log(`✅ Estadísticas por municipio generadas en ${processingTime}ms`);
+            
+            if (result.success) {
+                result.metadata = {
+                    ...result.metadata,
+                    processing_time_ms: processingTime,
+                    request_timestamp: new Date().toISOString(),
+                    filters_applied: req.query || 'ninguno'
+                };
+                res.json(result);
+            } else {
+                res.status(500).json(result);
+            }
+        } catch (error) {
+            console.error('❌ Error en DashboardController.getEstadisticasPorMunicipio:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error al obtener estadísticas por municipio',
+                error: error.message,
+                timestamp: new Date().toISOString()
+            });
+        }
+    }
+
+    /**
+     * Obtiene estadísticas detalladas por modalidad con filtros
+     */
+    async getEstadisticasModalidadDetallada(req, res) {
+        try {
+            console.log('📊 Procesando solicitud de estadísticas detalladas por modalidad...');
+            const filters = req.query;
+            const startTime = Date.now();
+            
+            const result = await DashboardService.getEstadisticasModalidadDetallada(filters);
+            const processingTime = Date.now() - startTime;
+            
+            console.log(`✅ Estadísticas detalladas por modalidad generadas en ${processingTime}ms`);
+            
+            if (result.success) {
+                result.metadata = {
+                    processing_time_ms: processingTime,
+                    request_timestamp: new Date().toISOString(),
+                    filters_applied: Object.keys(filters).length > 0 ? filters : 'ninguno',
+                    query_type: 'modalidad_detallada'
+                };
+                res.json(result);
+            } else {
+                res.status(500).json(result);
+            }
+        } catch (error) {
+            console.error('❌ Error en DashboardController.getEstadisticasModalidadDetallada:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error al obtener estadísticas detalladas por modalidad',
+                error: error.message,
+                timestamp: new Date().toISOString()
+            });
+        }
+    }
 }
 
 module.exports = new DashboardController();
