@@ -139,6 +139,11 @@ class AutorizacionService {
                     message: 'Término de búsqueda requerido'
                 };
             }
+            const normalizarNombreCarpeta = (texto) => {
+                return texto
+                    .replace(/[-\s]/g, '_')
+                    .replace(/_/g, '\\_'); // esto está bien
+            };
 
             const searchCondition = exactMatch
                 ? search
@@ -155,27 +160,44 @@ class AutorizacionService {
                 'estado'
             ];
 
-            // 🔍 Búsqueda por campos específicos
             if (campos.length > 0) {
                 campos.forEach(campo => {
-                    if (validFields.includes(campo)) {
+                    if (!validFields.includes(campo)) return;
+
+                    if (campo === 'nombreCarpeta') {
+                        const normalized = normalizarNombreCarpeta(search);
+
+                        whereClause[Op.or].push({
+                            nombreCarpeta: {
+                                [Op.iLike]: `%${normalized}%`
+                            }
+                        });
+                    } else {
                         whereClause[Op.or].push({
                             [campo]: searchCondition
                         });
                     }
                 });
-            } 
-            // 🔍 Búsqueda general
+            }
+
             else {
+                const normalized = normalizarNombreCarpeta(search);
+
                 whereClause[Op.or] = [
                     { numeroAutorizacion: searchCondition },
-                    { nombreCarpeta: searchCondition },
+                    {
+                        nombreCarpeta: {
+                            [Op.iLike]: `%${normalized}%`
+                        }
+                    },
                     { solicitante: searchCondition },
                     { '$municipio.nombre$': searchCondition },
                     { '$modalidad.nombre$': searchCondition },
                     { '$tipoAutorizacion.nombre$': searchCondition }
                 ];
+
             }
+
 
             const autorizaciones = await this.autorizacionModel.findAll({
                 where: whereClause,
