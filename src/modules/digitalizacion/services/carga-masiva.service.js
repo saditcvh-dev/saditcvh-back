@@ -96,8 +96,9 @@ class CargaMasivaService {
                 bloqueNumerico,
                 municipioNum: parseInt(componentes[0]),
                 modalidadNum: parseInt(componentes[1]),
-                consecutivo1: parseInt(componentes[2]),
-                consecutivo2: parseInt(componentes[3]),
+                consecutivo1: componentes[2], // string
+                consecutivo2: componentes[3], // string
+
                 tipoAbrev,
                 nombreOriginal: nombreArchivo
             };
@@ -146,9 +147,9 @@ class CargaMasivaService {
             // **MODIFICACIÓN: Buscar autorización por la combinación de datos**
             let autorizacion = await this.autorizacionModel.findOne({
                 where: {
-                    municipio_id: municipio.id,
-                    modalidad_id: modalidad.id,
-                    tipo_id: tipoAutorizacion.id,
+                    municipioId: municipio.id,
+                    modalidadId: modalidad.id,
+                    tipoId: tipoAutorizacion.id,
                     consecutivo1: datosArchivo.consecutivo1,
                     consecutivo2: datosArchivo.consecutivo2
                 },
@@ -160,14 +161,16 @@ class CargaMasivaService {
                     // Crear nueva autorización - el trigger generará el numero_autorizacion automáticamente
                     autorizacion = await this.autorizacionModel.create({
                         // No pasar numeroAutorizacion - dejar que el trigger lo genere
-                        municipio_id: municipio.id,
-                        modalidad_id: modalidad.id,
-                        tipo_id: tipoAutorizacion.id,
+                        numeroAutorizacion: datosArchivo.numeroAutorizacion,
+                        municipioId: municipio.id,
+                        modalidadId: modalidad.id,
+                        tipoId: tipoAutorizacion.id,
                         consecutivo1: datosArchivo.consecutivo1,
                         consecutivo2: datosArchivo.consecutivo2,
                         activo: true,
-                        fecha_creacion: new Date(),
-                        fecha_solicitud: new Date()
+                        fechaCreacion: new Date(),
+                        fechaSolicitud: new Date()
+
                     }, {
                         transaction,
                         returning: true // Asegurar que devuelva el registro creado
@@ -177,9 +180,9 @@ class CargaMasivaService {
                     if (createError.name === 'SequelizeUniqueConstraintError') {
                         autorizacion = await this.autorizacionModel.findOne({
                             where: {
-                                municipio_id: municipio.id,
-                                modalidad_id: modalidad.id,
-                                tipo_id: tipoAutorizacion.id,
+                                municipioId: municipio.id,
+                                modalidadId: modalidad.id,
+                                tipoId: tipoAutorizacion.id,
                                 consecutivo1: datosArchivo.consecutivo1,
                                 consecutivo2: datosArchivo.consecutivo2
                             },

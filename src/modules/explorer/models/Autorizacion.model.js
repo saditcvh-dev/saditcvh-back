@@ -54,7 +54,7 @@ const Autorizacion = sequelize.define("Autorizacion", {
     },
     nombreCarpeta: {
         type: DataTypes.STRING(500),
-        allowNull: true,
+        allowNull: true, 
         field: 'nombre_carpeta'
     },
     fechaCreacion: {

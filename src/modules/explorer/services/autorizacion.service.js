@@ -96,43 +96,31 @@ class AutorizacionService {
 		}
 	};
 	// Crear autorización
-	crearAutorizacion = async (autorizacionData) => {
-		try {
-			if(autorizacionData.municipioId) {
-				const municipio = await this.municipioModel.findByPk(autorizacionData.municipioId);
-				if(!municipio) {
-					throw {
-						status: 404,
-						message: 'Municipio no encontrado'
-					};
-				}
-			}
-			if(autorizacionData.modalidadId) {
-				const modalidad = await this.modalidadModel.findByPk(autorizacionData.modalidadId);
-				if(!modalidad) {
-					throw {
-						status: 404,
-						message: 'Modalidad no encontrada'
-					};
-				}
-			}
-			if(autorizacionData.tipoId) {
-				const tipo = await this.tiposAutorizacionModel.findByPk(autorizacionData.tipoId);
-				if(!tipo) {
-					throw {
-						status: 404,
-						message: 'Tipo de autorización no encontrado'
-					};
-				}
-			}
-			const autorizacion = await this.autorizacionModel.create(autorizacionData);
-			return autorizacion;
-		}
-		catch (error) {
-			console.error('Error en crearAutorizacion:', error);
-			throw error;
-		}
-	};
+crearAutorizacion = async (autorizacionData) => {
+  try {
+   
+    const data = {
+      numeroAutorizacion: autorizacionData.numero_autorizacion,
+      consecutivo1: autorizacionData.consecutivo1,
+      consecutivo2: autorizacionData.consecutivo2,
+    //   nombreCarpeta, //  OBLIGATORIO
+      solicitante: autorizacionData.solicitante,
+      municipioId: autorizacionData.municipio_id,
+      modalidadId: autorizacionData.modalidad_id,
+      tipoId: autorizacionData.tipo_id,
+      activo: true,
+      fechaSolicitud: autorizacionData.fecha_solicitud || new Date(),
+      fechaCreacion: new Date()
+    };
+
+    return await this.autorizacionModel.create(data);
+  } catch (error) {
+    console.error('Error en crearAutorizacion:', error);
+    throw error;
+  }
+};
+
+
 	buscarAutorizaciones = async (opciones = {}) => {
 		try {
 			const {
