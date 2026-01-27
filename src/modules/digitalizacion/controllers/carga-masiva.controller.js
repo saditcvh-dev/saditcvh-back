@@ -35,12 +35,14 @@ class CargaMasivaController {
                     message: 'No se encontraron archivos PDF en el comprimido'
                 });
             }
+            const useOcr = req.body.useOcr === 'true';
+
 
             // Procesar carga masiva
             const resultados = await CargaMasivaService.procesarCargaMasiva(
                 archivos,
                 userId,
-                req.body
+                { useOcr }
             );
             console.log("resultados")
             console.log(resultados)
@@ -82,11 +84,12 @@ class CargaMasivaController {
                     message: 'No se encontraron archivos PDF'
                 });
             }
+const useOcr = req.body.useOcr === 'true';
 
             // Procesar carga masiva
             const resultados = await CargaMasivaService.procesarArchivosDirectos(
                 archivosPDF,
-                userId
+                userId,{ useOcr }
             );
 
             res.json({

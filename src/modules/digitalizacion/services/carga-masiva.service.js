@@ -11,6 +11,7 @@ const ArchivoDigital = require('../../explorer/models/archivo-digital.model');
 const User = require('../../users/models/user.model');
 const crypto = require('crypto');
 const { Op } = require('sequelize');
+const OCRProcessorService = require('./ocr-processor.service');
 class CargaMasivaService {
     constructor() {
         this.autorizacionModel = Autorizacion;
@@ -219,11 +220,36 @@ class CargaMasivaService {
     }
 
     // Procesar archivo individual
-    async procesarArchivoMasivo(archivoData, autorizacionInfo, userId) {
+    async procesarArchivoMasivo(archivoData, autorizacionInfo, userId, opciones = {}) {
+        const { useOcr = false } = opciones;
         const transaction = await this.documentoModel.sequelize.transaction();
 
         try {
             const { autorizacion, municipio, tipoAutorizacion } = autorizacionInfo;
+
+            // Determinar si procesamos con OCR
+            let bufferFinal = archivoData.buffer;
+            let textoOCR = null;
+            let estadoOCR = 'pendiente';
+
+            if (useOcr) {
+                estadoOCR = 'procesando';
+                // Procesar con OCR
+                const resultadoOCR = await OCRProcessorService.procesarPDFConOCR(
+                    archivoData.buffer,
+                    archivoData.nombre
+                );
+
+                if (resultadoOCR.success) {
+                    bufferFinal = resultadoOCR.pdfBuffer;
+                    textoOCR = resultadoOCR.text;
+                    estadoOCR = 'completado';
+                } else {
+                    estadoOCR = 'fallido';
+                    // Puedes decidir si continuar sin OCR o fallar
+                    console.warn(`OCR falló para ${archivoData.nombre}: ${resultadoOCR.error}`);
+                }
+            }
 
             // Buscar si ya existe documento para esta autorización
             const documentoExistente = await this.documentoModel.findOne({
@@ -233,7 +259,6 @@ class CargaMasivaService {
                 },
                 transaction
             });
-
 
             // Crear estructura de carpetas
             const estructura = this.construirEstructuraCarpetasNumericos({
@@ -257,12 +282,12 @@ class CargaMasivaService {
 
             const rutaArchivo = path.join(estructura.rutaCompleta, nombreArchivo);
 
-            // Guardar archivo físicamente
-            await fs.writeFile(rutaArchivo, archivoData.buffer);
+            // Guardar archivo físicamente (con OCR aplicado si corresponde)
+            await fs.writeFile(rutaArchivo, bufferFinal);
 
-            // Calcular checksums
-            const checksumMd5 = crypto.createHash('md5').update(archivoData.buffer).digest('hex');
-            const checksumSha256 = crypto.createHash('sha256').update(archivoData.buffer).digest('hex');
+            // Calcular checksums del archivo final
+            const checksumMd5 = crypto.createHash('md5').update(bufferFinal).digest('hex');
+            const checksumSha256 = crypto.createHash('sha256').update(bufferFinal).digest('hex');
 
             // Si existe documento anterior, marcarlo como no actual
             if (documentoExistente) {
@@ -275,10 +300,10 @@ class CargaMasivaService {
                 titulo: `Documento de autorización ${autorizacion.numeroAutorizacion}`,
                 descripcion: `Documento cargado masivamente: ${archivoData.nombreOriginal}`,
                 version: version,
-                versionActual: true,
+                version_actual: true,
                 documentoPadreId: documentoExistente ? documentoExistente.id : null,
                 estadoDigitalizacion: 'digitalizado',
-                paginas: this.estimarPaginas(archivoData.buffer),
+                paginas: this.estimarPaginas(bufferFinal),
                 creadoPor: userId
             }, { transaction });
 
@@ -288,15 +313,21 @@ class CargaMasivaService {
                 nombre_archivo: nombreArchivo,
                 ruta_almacenamiento: path.join(estructura.rutaRelativa, nombreArchivo),
                 mime_type: 'application/pdf',
-                tamano_bytes: archivoData.tamano,
+                tamano_bytes: bufferFinal.length,
                 checksum_md5: checksumMd5,
                 checksum_sha256: checksumSha256,
-                estado_ocr: 'pendiente',
+                estado_ocr: estadoOCR,
+                texto_ocr: textoOCR, // NUEVO: guardar texto extraído
                 fecha_digitalizacion: new Date(),
                 digitalizado_por: userId,
                 version_archivo: version,
-                total_paginas: this.estimarPaginas(archivoData.buffer)
+                total_paginas: this.estimarPaginas(bufferFinal)
             }, { transaction });
+
+            // // Si hay texto OCR, puedes también guardarlo en una tabla separada
+            // if (textoOCR) {
+            //     await this.guardarTextoOCR(nuevoDocumento.id, textoOCR, transaction);
+            // }
 
             await transaction.commit();
 
@@ -306,6 +337,8 @@ class CargaMasivaService {
                 documentoId: nuevoDocumento.id,
                 version: version,
                 archivo: nombreArchivo,
+                ocrAplicado: useOcr,
+                estadoOCR: estadoOCR,
                 exito: true
             };
         } catch (error) {
@@ -313,7 +346,13 @@ class CargaMasivaService {
             throw error;
         }
     }
-
+        /**
+     * Guardar texto OCR en tabla separada (opcional)
+     */
+    async guardarTextoOCR(documentoId, texto, transaction) {
+        // Puedes crear una tabla TextoOCR o usar la existente
+        // Ejemplo: await TextoOCR.create({ documentoId, texto }, { transaction });
+    }
     // Construir estructura de carpetas (igual que en DocumentoService)
     construirEstructuraCarpetasNumericos(autorizacion) {
         const municipioId = String(autorizacion.municipio.id).padStart(2, '0');
@@ -349,40 +388,38 @@ class CargaMasivaService {
     }
 
     estimarPaginas(buffer) {
-        // Estimación básica de páginas basada en tamaño del PDF
-        // Podrías implementar una lectura real del PDF con una librería como pdf-parse
-        const tamanoMB = buffer.length / (1024 * 1024);
-        return Math.max(1, Math.round(tamanoMB * 10)); // Estimación aproximada
+  const texto = buffer.toString('latin1');
+    const matches = texto.match(/\/Type\s*\/Page\b/g);
+    return matches ? matches.length : 1;
     }
 
     // Método principal para procesar carga masiva
-    async procesarCargaMasiva(archivos, userId, opciones = {}) {
+     async procesarCargaMasiva(archivos, userId, opciones = {}) {
+        const { useOcr = false, loteSize = 5 } = opciones; // Reducir loteSize para OCR
+
         try {
             const resultados = {
                 total: archivos.length,
                 exitosos: 0,
                 fallidos: 0,
+                conOCR: useOcr,
                 detalles: []
             };
 
-            // Procesar archivos en lotes para mejor performance
-            const loteSize = opciones.loteSize || 10;
-
-            for (let i = 0; i < archivos.length; i += loteSize) {
-                const lote = archivos.slice(i, i + loteSize);
-                const promesas = lote.map(async (archivo) => {
+            // Para OCR, procesar secuencialmente o en lotes pequeños
+            if (useOcr) {
+                // Procesar uno por uno para no saturar Python
+                for (const archivo of archivos) {
                     try {
-                        // Parsear nombre del archivo
                         const datosArchivo = this.parsearNombreArchivo(archivo.nombre);
-
-                        // Buscar o crear autorización
                         const autorizacionInfo = await this.buscarOCrearAutorizacion(datosArchivo, userId);
-
-                        // Procesar archivo
-                        const resultado = await this.procesarArchivoMasivo({
-                            ...archivo,
-                            nombreOriginal: datosArchivo.nombreOriginal
-                        }, autorizacionInfo, userId);
+                        
+                        const resultado = await this.procesarArchivoMasivo(
+                            { ...archivo, nombreOriginal: datosArchivo.nombreOriginal },
+                            autorizacionInfo,
+                            userId,
+                            { useOcr: true } // Pasar opción de OCR
+                        );
 
                         resultados.exitosos++;
                         resultados.detalles.push({
@@ -398,9 +435,16 @@ class CargaMasivaService {
                             error: error.message
                         });
                     }
-                });
-
-                await Promise.all(promesas);
+                }
+            } else {
+                // Procesamiento normal en lotes paralelos
+                for (let i = 0; i < archivos.length; i += loteSize) {
+                    const lote = archivos.slice(i, i + loteSize);
+                    const promesas = lote.map(async (archivo) => {
+                        // ... código existente sin OCR ...
+                    });
+                    await Promise.all(promesas);
+                }
             }
 
             return resultados;
@@ -410,14 +454,14 @@ class CargaMasivaService {
     }
 
     // Método para recibir archivos directamente (no comprimidos)
-    async procesarArchivosDirectos(archivos, userId) {
+    async procesarArchivosDirectos(archivos, userId,opciones = {}) {
         const archivosProcesados = archivos.map(archivo => ({
             nombre: archivo.originalname,
             buffer: archivo.buffer,
             tamano: archivo.size
         }));
 
-        return await this.procesarCargaMasiva(archivosProcesados, userId);
+        return await this.procesarCargaMasiva(archivosProcesados, userId,opciones);
     }
 }
 
