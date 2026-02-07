@@ -10,4 +10,5 @@ router.use("/tipos-autorizacion", require("./modules/explorer/routes/tipos-autor
 router.use("/documentos", require("./modules/explorer/routes/documento.routes"));
 router.use("/carga-masiva", require("./modules/digitalizacion/routes/carga-masiva.routes"));
 router.use("/busqueda", require("./modules/busqueda/routes/busqueda.routes"));
+router.use("/anotaciones", require("./modules/explorer/routes/anotaciones.routes.js"));
 module.exports = router;
