@@ -51,8 +51,8 @@ class BusquedaService {
             const asociacionesDoc = Object.keys(Documento.associations || {});
             const asociacionesAuth = Object.keys(Autorizacion.associations || {});
 
-            console.log('Asociaciones en Documento:', asociacionesDoc);
-            console.log('Asociaciones en Autorizacion:', asociacionesAuth);
+            // console.log('Asociaciones en Documento:', asociacionesDoc);
+            // console.log('Asociaciones en Autorizacion:', asociacionesAuth);
 
         } catch (error) {
             console.error('Error al verificar modelos:', error);

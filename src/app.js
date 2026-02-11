@@ -15,8 +15,10 @@ const reporteActividadRoutes = require('./modules/reports/routes/reporte-activid
 const municipioRoutes = require("./modules/municipios/routes/municipio.routes");
 const permissionRoutes = require("./modules/permissions/routes/permission.routes");
 const auditRoutes = require("./modules/audit/routes/audit.routes");
+const backupsRoutes = require('./modules/backups/routes/backups.routes');
 const path = require("path");
 
+const STORAGE_PATH = process.env.FILE_STORAGE_PATH || path.join(__dirname, '../storage');
 const app = express();
 
 app.disable("etag");
@@ -80,6 +82,7 @@ app.use("/api/cargos", cargoRoutes);
 app.use("/api/municipios", municipioRoutes);
 app.use("/api/permissions", permissionRoutes);
 app.use("/api/audit", auditRoutes);
+app.use("/api/backups", backupsRoutes);
 
 // 404
 app.use(notFoundHandler);

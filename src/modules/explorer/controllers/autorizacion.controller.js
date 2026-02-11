@@ -7,7 +7,7 @@ class AutorizacionController {
     // Buscar autorizaciones avanzada
     buscarAutorizaciones = async (req, res) => {
         try {
-            const { 
+            const {
                 search,
                 campos = [],
                 exactMatch = false
@@ -17,7 +17,7 @@ class AutorizacionController {
                 campos,
                 exactMatch
             });
-            
+
             res.status(200).json({
                 success: true,
                 message: 'Búsqueda completada exitosamente',
@@ -34,10 +34,10 @@ class AutorizacionController {
     // Obtener todas las autorizaciones
     obtenerAutorizaciones = async (req, res) => {
         try {
-            const { 
-                page = 1, 
-                limit = 10, 
-                sortBy = 'id', 
+            const {
+                page = 1,
+                limit = 10,
+                sortBy = 'id',
                 sortOrder = 'DESC',
                 search,
                 estado,
@@ -60,7 +60,7 @@ class AutorizacionController {
             if (modalidadId) options.filters.modalidadId = modalidadId;
             if (tipoId) options.filters.tipoId = tipoId;
             const result = await this.autorizacionService.obtenerAutorizaciones(options);
-            
+
             res.status(200).json({
                 success: true,
                 message: 'Autorizaciones obtenidas exitosamente',
@@ -81,48 +81,48 @@ class AutorizacionController {
         }
     };
     // Crear una nueva autorización
-    	crearAutorizacion = async (req, res) => {
-		const userId = req.user?.id || null;
-		try {
-			const autorizacionData = req.body;
-			const autorizacion = await this.autorizacionService.crearAutorizacion(autorizacionData);
-			await auditService.createLog(req, {
-				action: 'CREATE_AUTORIZACION',
-				module: 'Autorizaciones',
-				entityId: autorizacion.id, // autorización creada
-				details: {
-					message: 'Autorización creada exitosamente',
-					autorizacionId: autorizacion.id,
-					autorizacion: autorizacion.nombreCarpeta,
-					createdBy: userId,
-					status: 'SUCCESS'
-				}
-			});
-			res.status(201).json({
-				success: true,
-				message: 'Autorización creada exitosamente',
-				data: autorizacion
-			});
-		}
-		catch (error) {
-			await auditService.createLog(req, {
-				action: 'CREATE_AUTORIZACION',
-				module: 'Autorizaciones',
-				entityId: null,
-				details: {
-					message: 'Error al crear autorización',
-					error: error.message,
-					createdBy: userId,
-					status: 'ERROR'
-				}
-			});
-			res.status(error.status || 500).json({
-				success: false,
-				message: error.message || 'Error al crear autorización',
-				error: error.errors || error
-			});
-		}
-	};
+    crearAutorizacion = async (req, res) => {
+        const userId = req.user?.id || null;
+        try {
+            const autorizacionData = req.body;
+            const autorizacion = await this.autorizacionService.crearAutorizacion(autorizacionData);
+            await auditService.createLog(req, {
+                action: 'CREATE_AUTORIZACION',
+                module: 'Autorizaciones',
+                entityId: autorizacion.id, // autorización creada
+                details: {
+                    message: 'Autorización creada exitosamente',
+                    autorizacionId: autorizacion.id,
+                    autorizacion: autorizacion.nombreCarpeta,
+                    createdBy: userId,
+                    status: 'SUCCESS'
+                }
+            });
+            res.status(201).json({
+                success: true,
+                message: 'Autorización creada exitosamente',
+                data: autorizacion
+            });
+        }
+        catch (error) {
+            await auditService.createLog(req, {
+                action: 'CREATE_AUTORIZACION',
+                module: 'Autorizaciones',
+                entityId: null,
+                details: {
+                    message: 'Error al crear autorización',
+                    error: error.message,
+                    createdBy: userId,
+                    status: 'ERROR'
+                }
+            });
+            res.status(error.status || 500).json({
+                success: false,
+                message: error.message || 'Error al crear autorización',
+                error: error.errors || error
+            });
+        }
+    };
     // crearAutorizacion = async (req, res) => {
     //     try {
     //         const autorizacionData = req.body;
@@ -148,9 +148,9 @@ class AutorizacionController {
         try {
             const { id } = req.params;
             const includeRelations = req.query.include === 'true';
-            
+
             const autorizacion = await this.autorizacionService.obtenerAutorizacionPorId(id, includeRelations);
-            
+
             res.status(200).json({
                 success: true,
                 message: 'Autorización obtenida exitosamente',
@@ -170,7 +170,7 @@ class AutorizacionController {
         try {
             const { numero } = req.params;
             const autorizacion = await this.autorizacionService.obtenerAutorizacionPorNumero(numero);
-            
+
             res.status(200).json({
                 success: true,
                 message: 'Autorización obtenida exitosamente',
@@ -190,9 +190,9 @@ class AutorizacionController {
         try {
             const { id } = req.params;
             const autorizacionData = req.body;
-            
+
             const autorizacion = await this.autorizacionService.actualizarAutorizacion(id, autorizacionData);
-            
+
             res.status(200).json({
                 success: true,
                 message: 'Autorización actualizada exitosamente',
@@ -208,14 +208,15 @@ class AutorizacionController {
     };
 
     // Eliminar autorización (soft delete)
+<<<<<<< HEAD
     // Eliminar autorización (soft delete)
+=======
+>>>>>>> 4ee828eb9a45c4d89d6c9212ea9cbf2ab89068e6
     eliminarAutorizacion = async (req, res) => {
         const userId = req.user?.id || null;
 
         try {
-            const {
-                id
-            } = req.params;
+            const { id } = req.params;
 
             await this.autorizacionService.eliminarAutorizacion(id);
 
@@ -260,14 +261,15 @@ class AutorizacionController {
         }
     };
 
+
     // Activar/Desactivar autorización
     cambiarEstadoAutorizacion = async (req, res) => {
         try {
             const { id } = req.params;
             const { activo } = req.body;
-            
+
             const autorizacion = await this.autorizacionService.cambiarEstadoAutorizacion(id, activo);
-            
+
             res.status(200).json({
                 success: true,
                 message: `Autorización ${activo ? 'activada' : 'desactivada'} exitosamente`,
@@ -286,7 +288,7 @@ class AutorizacionController {
     generarReporteAutorizaciones = async (req, res) => {
         try {
             const { fechaInicio, fechaFin, municipioId, modalidadId, tipoId } = req.query;
-            
+
             const reporte = await this.autorizacionService.generarReporteAutorizaciones({
                 fechaInicio,
                 fechaFin,
@@ -294,7 +296,7 @@ class AutorizacionController {
                 modalidadId,
                 tipoId
             });
-            
+
             res.status(200).json({
                 success: true,
                 message: 'Reporte generado exitosamente',
