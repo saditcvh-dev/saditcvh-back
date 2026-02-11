@@ -1,4 +1,3 @@
-// reportes/routes/reporte-digitalizacion.routes.js
 const express = require('express');
 const router = express.Router();
 const ReporteDigitalizacionController = require('../controllers/reporte-documentos.controller');

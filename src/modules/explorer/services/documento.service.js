@@ -8,6 +8,8 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const Municipio = require('../../municipios/models/municipio.model');
+const ArchivoVisita = require('../models/archivo-visita.model');
+const { Op } = require('sequelize');
 
 class DocumentoService {
     // Crear un nuevo documento
@@ -272,7 +274,8 @@ class DocumentoService {
             throw new Error(`Error al obtener documento: ${error.message}`);
         }
     }
-    async obtenerDocumentosPorAutorizacion(autorizacionId) {
+
+    async obtenerDocumentosPorAutorizacion(autorizacionId, userId) {
         try {
             const documentos = await Documento.findAll({
                 where: { autorizacionId },
@@ -294,15 +297,85 @@ class DocumentoService {
                                 ]
                             }
                         ],
-                        order: [['version_archivo', 'DESC']]
+                        order: [['version_archivo', 'DESC']],
+                        limit: 1
                     }
                 ],
                 order: [['created_at', 'DESC']]
             });
 
+            if (userId && documentos.length > 0) {
+                let archivoRegistrado = false;
+                
+                for (const documento of documentos) {
+                    if (!archivoRegistrado && 
+                        documento.archivosDigitales && 
+                        documento.archivosDigitales.length > 0) {
+                        
+                        const ultimaVersionArchivo = documento.archivosDigitales[0];
+                        
+                        const dosSegundosAtras = new Date(Date.now() - 3000);
+                        const visitaReciente = await ArchivoVisita.findOne({
+                            where: {
+                                archivo_id: ultimaVersionArchivo.id,
+                                usuario_id: userId,
+                                created_at: {
+                                    [Op.gte]: dosSegundosAtras
+                                }
+                            }
+                        });
+                        
+                        if (!visitaReciente) {
+                            await ArchivoVisita.create({
+                                archivo_id: ultimaVersionArchivo.id,
+                                usuario_id: userId,
+                                fecha_apertura: new Date()
+                            });
+                        }
+                        
+                        archivoRegistrado = true;
+                        break;
+                    }
+                }
+            }
+
             return documentos;
         } catch (error) {
             throw new Error(`Error al obtener documentos: ${error.message}`);
+        }
+    }
+
+    _ultimoRegistro = {};
+
+    async _registrarVisitaConDebounce(archivoId, userId) {
+        const ahora = Date.now();
+        const clave = `${userId}_${archivoId}`;
+
+        if (this._ultimoRegistro[clave] && (ahora - this._ultimoRegistro[clave] < 3000)) {
+            return;
+        }
+
+        this._ultimoRegistro[clave] = ahora;
+
+        setTimeout(() => {
+            delete this._ultimoRegistro[clave];
+        }, 5000); 
+
+        return await this.registrarVisitaArchivo(archivoId, userId);
+    }
+
+    async registrarVisitaArchivo(archivoId, userId) {
+        try {
+            const visita = await ArchivoVisita.create({
+                archivo_id: archivoId,
+                usuario_id: userId,
+                fecha_apertura: new Date()
+            });
+
+            return visita;
+            
+        } catch (error) {
+            throw new Error(`Error al registrar visita: ${error.message}`);
         }
     }
 

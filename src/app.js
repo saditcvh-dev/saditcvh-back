@@ -11,6 +11,7 @@ const cargoRoutes = require("./modules/cargo/routes/cargo.routes");
 const reporteUsuariosRoutes = require('./modules/reports/routes/reporte-usuarios.routes');
 const dashboardRoutes = require('./modules/dashboard/routes/dashboard.routes');
 const DigitalizationReportService = require('./modules/reports/routes/reporte-documentos.routes');
+const reporteActividadRoutes = require('./modules/reports/routes/reporte-actividad.routes');
 const municipioRoutes = require("./modules/municipios/routes/municipio.routes");
 const permissionRoutes = require("./modules/permissions/routes/permission.routes");
 const auditRoutes = require("./modules/audit/routes/audit.routes");
@@ -69,6 +70,7 @@ app.get("/api/csrf-token", (req, res) => {
 app.use('/api/reports/reporte-usuarios', reporteUsuariosRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports/reporte-digitalizacion', DigitalizationReportService);
+app.use('/api/reports/reporte-actividad', reporteActividadRoutes);
 
 // Rutas principales
 app.use("/api", routes);

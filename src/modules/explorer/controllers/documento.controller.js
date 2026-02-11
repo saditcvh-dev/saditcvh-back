@@ -82,26 +82,24 @@ class DocumentoController {
     // Obtener documentos por autorización
     async getByAutorizacion(req, res) {
         try {
-            // const { autorizacionId } = req.params;
-            const {
-                autorizacionId
-            } = req.params;
-          
-            // const documentos = await documentoService.obtenerDocumentosPorAutorizacion(28);
-            const documentos = await documentoService.obtenerDocumentosPorAutorizacion(autorizacionId);
+            const { autorizacionId } = req.params;
+            const userId = req.user.id; // Obtener el ID del usuario autenticado
+
+            const documentos = await documentoService.obtenerDocumentosPorAutorizacion(autorizacionId, userId);
+            
             res.status(200).json({
                 success: true,
                 message: 'Documentos obtenidos correctamente',
                 data: documentos
             });
-        }
-        catch (error) {
+        } catch (error) {
             res.status(400).json({
                 success: false,
                 message: error.message
             });
         }
     }
+
     // Crear nueva versión de documento
     // Crear nueva versión de documento
     async crearVersion(req, res) {

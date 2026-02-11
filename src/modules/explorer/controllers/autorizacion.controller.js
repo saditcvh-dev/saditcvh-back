@@ -208,14 +208,6 @@ class AutorizacionController {
     };
 
     // Eliminar autorización (soft delete)
-<<<<<<< HEAD
-    eliminarAutorizacion = async (req, res) => {
-        try {
-            const { id } = req.params;
-            
-            await this.autorizacionService.eliminarAutorizacion(id);
-            
-=======
     // Eliminar autorización (soft delete)
     eliminarAutorizacion = async (req, res) => {
         const userId = req.user?.id || null;
@@ -240,14 +232,10 @@ class AutorizacionController {
                 }
             });
 
->>>>>>> d000e4e98bc3523e451f6587c1ff0fad193bf7aa
             res.status(200).json({
                 success: true,
                 message: 'Autorización eliminada exitosamente'
             });
-<<<<<<< HEAD
-        } catch (error) {
-=======
 
         } catch (error) {
 
@@ -264,7 +252,6 @@ class AutorizacionController {
                 }
             });
 
->>>>>>> d000e4e98bc3523e451f6587c1ff0fad193bf7aa
             res.status(error.status || 500).json({
                 success: false,
                 message: error.message || 'Error al eliminar autorización',

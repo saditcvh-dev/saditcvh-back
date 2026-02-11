@@ -27,7 +27,6 @@ class TiposAutorizacionService {
                 count: tipos.length
             };
         } catch (error) {
-            console.error('Error al obtener tipos de autorización:', error);
             throw new Error(`Error al obtener tipos de autorización: ${error.message}`);
         }
     }
