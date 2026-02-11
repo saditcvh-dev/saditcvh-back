@@ -17,6 +17,7 @@ const auditRoutes = require("./modules/audit/routes/audit.routes");
 const backupsRoutes = require('./modules/backups/routes/backups.routes');
 const path = require("path");
 
+const STORAGE_PATH = process.env.FILE_STORAGE_PATH || path.join(__dirname, '../storage');
 const app = express();
 
 app.disable("etag");
