@@ -602,12 +602,26 @@ class DashboardService {
                 type: QueryTypes.SELECT
             });
             
-            return result;
+            // Restar 6 horas con JavaScript puro
+            return result.map(item => {
+                if (item.fecha) {
+                    const fecha = new Date(item.fecha);
+                    fecha.setHours(fecha.getHours() - 6);
+                    const año = fecha.getFullYear();
+                    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+                    const dia = String(fecha.getDate()).padStart(2, '0');
+                    return {
+                        ...item,
+                        fecha: `${año}-${mes}-${dia}`
+                    };
+                }
+                return item;
+            });
+            
         } catch (error) {
             return [];
         }
-    }    
-
+    } 
 
         /**
      * Obtiene estadísticas diarias para los últimos 7 días
