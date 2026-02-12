@@ -208,10 +208,6 @@ class AutorizacionController {
     };
 
     // Eliminar autorización (soft delete)
-<<<<<<< HEAD
-    // Eliminar autorización (soft delete)
-=======
->>>>>>> 4ee828eb9a45c4d89d6c9212ea9cbf2ab89068e6
     eliminarAutorizacion = async (req, res) => {
         const userId = req.user?.id || null;
 
