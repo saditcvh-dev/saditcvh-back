@@ -86,7 +86,7 @@ class DocumentoController {
             const userId = req.user.id; // Obtener el ID del usuario autenticado
 
             const documentos = await documentoService.obtenerDocumentosPorAutorizacion(autorizacionId, userId);
-            
+
             res.status(200).json({
                 success: true,
                 message: 'Documentos obtenidos correctamente',
@@ -218,7 +218,6 @@ class DocumentoController {
     }
 
 
-
     async descargarArchivo(req, res) {
         try {
             const { archivoId } = req.params;
@@ -226,14 +225,15 @@ class DocumentoController {
 
             const archivo = await documentoService.obtenerArchivoDigital(archivoId);
 
-            // ⬅️ Subimos hasta la raíz real del proyecto
-            const ROOT_PATH = path.resolve(__dirname, '../../../..');
+            // Usar la misma base que al guardar
+            const basePath = process.env.FILE_STORAGE_PATH || path.resolve(__dirname, '../../../storage');
 
             const filePath = path.join(
-                ROOT_PATH,
-                'storage',
+                basePath,
                 archivo.ruta_almacenamiento
             );
+
+            console.log('Buscando archivo en:', filePath);
 
             if (!fs.existsSync(filePath)) {
                 throw new Error('Archivo no encontrado en el servidor');
@@ -275,6 +275,63 @@ class DocumentoController {
             });
         }
     }
+
+    // async descargarArchivo(req, res) {
+    //     try {
+    //         const { archivoId } = req.params;
+    //         const userId = req.user.id;
+
+    //         const archivo = await documentoService.obtenerArchivoDigital(archivoId);
+
+    //         //  Subimos hasta la raíz real del proyecto
+    //         const ROOT_PATH = path.resolve(__dirname, '../../../..');
+
+    //         const filePath = path.join(
+    //             ROOT_PATH,
+    //             'storage',
+    //             archivo.ruta_almacenamiento
+    //         );
+
+    //         if (!fs.existsSync(filePath)) {
+    //             throw new Error('Archivo no encontrado en el servidor');
+    //         }
+
+    //         await auditService.createLog(req, {
+    //             action: 'DOWNLOAD_DOCUMENT',
+    //             module: 'Explorador',
+    //             entityId: archivoId,
+    //             details: {
+    //                 message: 'Archivo descargado correctamente',
+    //                 archivoId,
+    //                 documentId: archivo.documento_id,
+    //                 fileName: archivo.nombre_archivo,
+    //                 downloadedBy: userId,
+    //                 status: 'SUCCESS'
+    //             }
+    //         });
+
+    //         res.download(filePath, archivo.nombre_archivo);
+
+    //     } catch (error) {
+
+    //         await auditService.createLog(req, {
+    //             action: 'DOWNLOAD_DOCUMENT',
+    //             module: 'Explorador',
+    //             entityId: req.params.archivoId,
+    //             details: {
+    //                 message: 'Error al descargar archivo',
+    //                 error: error.message,
+    //                 downloadedBy: req.user?.id || null,
+    //                 status: 'ERROR'
+    //             }
+    //         });
+
+    //         res.status(404).json({
+    //             success: false,
+    //             message: error.message
+    //         });
+    //     }
+    // }
 
     // Descargar archivo
     // Descargar archivo
