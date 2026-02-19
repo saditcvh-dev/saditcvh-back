@@ -56,7 +56,18 @@ const OCRProceso = sequelize.define("OCRProceso", {
     fecha_procesado: {
         type: DataTypes.DATE,
         allowNull: true
-    }
+    },
+    tipo_proceso: {
+    type: DataTypes.ENUM("OCR", "NORMAL"),
+    allowNull: false,
+    defaultValue: "OCR"
+    },
+    origen: {
+        type: DataTypes.ENUM("DIRECTO", "COMPRIMIDO"),
+        allowNull: false,
+        defaultValue: "DIRECTO"
+    },
+
 }, {
     tableName: "ocr_procesos",
     schema: "public",

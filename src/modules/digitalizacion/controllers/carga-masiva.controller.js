@@ -63,11 +63,24 @@ class CargaMasivaController {
                     });
                 }
 
+                // const resultados = await CargaMasivaService.procesarCargaMasiva(
+                //     archivos,
+                //     userId,
+                //     { useOcr: false }
+                // );
+                // Generar loteId para proceso sincrónico
+                const loteId = `lote_sync_${Date.now()}_${userId}`;
+
                 const resultados = await CargaMasivaService.procesarCargaMasiva(
                     archivos,
                     userId,
-                    { useOcr: false }
+                    { 
+                        useOcr: false,
+                        loteId,
+                        origen: 'COMPRIMIDO'
+                    }
                 );
+
 
                 res.json({
                     success: true,

@@ -170,8 +170,8 @@ class CargaMasivaService {
                         consecutivo1: datosArchivo.consecutivo1,
                         consecutivo2: datosArchivo.consecutivo2,
                         activo: true,
-                        fechaCreacion: new Date(),
-                        fechaSolicitud: new Date()
+                        // fechaCreacion: new Date(),
+                        // fechaSolicitud: new Date()
 
                     }, {
                         transaction,
@@ -319,7 +319,7 @@ class CargaMasivaService {
                 checksum_sha256: checksumSha256,
                 estado_ocr: estadoOCR,
                 texto_ocr: textoOCR, // NUEVO: guardar texto extraído
-                fecha_digitalizacion: new Date(),
+                // fecha_digitalizacion: new Date(),
                 digitalizado_por: userId,
                 version_archivo: version,
                 total_paginas: this.estimarPaginas(bufferFinal)
@@ -395,8 +395,94 @@ class CargaMasivaService {
     }
 
     // Método principal para procesar carga masiva
+    // async procesarCargaMasiva(archivos, userId, opciones = {}) {
+    //     const { useOcr = false, loteSize = 5 } = opciones; // Reducir loteSize para OCR
+
+    //     try {
+    //         const resultados = {
+    //             total: archivos.length,
+    //             exitosos: 0,
+    //             fallidos: 0,
+    //             conOCR: useOcr,
+    //             detalles: []
+    //         };
+
+    //         // Para OCR, procesar secuencialmente o en lotes pequeños
+    //         if (useOcr) {
+    //             // Procesar uno por uno para no saturar Python
+    //             for (const archivo of archivos) {
+    //                 try {
+    //                     const datosArchivo = this.parsearNombreArchivo(archivo.nombre);
+    //                     const autorizacionInfo = await this.buscarOCrearAutorizacion(datosArchivo, userId);
+
+    //                     const resultado = await this.procesarArchivoMasivo(
+    //                         { ...archivo, nombreOriginal: datosArchivo.nombreOriginal },
+    //                         autorizacionInfo,
+    //                         userId,
+    //                         { useOcr: true } // Pasar opción de OCR
+    //                     );
+
+    //                     resultados.exitosos++;
+    //                     resultados.detalles.push({
+    //                         archivo: archivo.nombre,
+    //                         exito: true,
+    //                         ...resultado
+    //                     });
+    //                 } catch (error) {
+    //                     resultados.fallidos++;
+    //                     resultados.detalles.push({
+    //                         archivo: archivo.nombre,
+    //                         exito: false,
+    //                         error: error.message
+    //                     });
+    //                 }
+    //             }
+    //         } else {
+    //             // Procesamiento normal en lotes paralelos
+    //             for (let i = 0; i < archivos.length; i += loteSize) {
+    //                 const lote = archivos.slice(i, i + loteSize);
+    //                 const promesas = lote.map(async (archivo) => {
+    //                     try {
+    //                         // Parsear nombre del archivo
+    //                         const datosArchivo = this.parsearNombreArchivo(archivo.nombre);
+
+    //                         // Buscar o crear autorización
+    //                         const autorizacionInfo = await this.buscarOCrearAutorizacion(datosArchivo, userId);
+
+    //                         // Procesar archivo
+    //                         const resultado = await this.procesarArchivoMasivo({
+    //                             ...archivo,
+    //                             nombreOriginal: datosArchivo.nombreOriginal
+    //                         }, autorizacionInfo, userId);
+
+    //                         resultados.exitosos++;
+    //                         resultados.detalles.push({
+    //                             archivo: archivo.nombre,
+    //                             exito: true,
+    //                             ...resultado
+    //                         });
+    //                     } catch (error) {
+    //                         resultados.fallidos++;
+    //                         resultados.detalles.push({
+    //                             archivo: archivo.nombre,
+    //                             exito: false,
+    //                             error: error.message
+    //                         });
+    //                     }
+    //                 });
+    //                 await Promise.all(promesas);
+    //             }
+    //         }
+
+    //         return resultados;
+    //     } catch (error) {
+    //         throw new Error(`Error en carga masiva: ${error.message}`);
+    //     }
+    // }
+    // se hixo esta versio  para rgistrear logf apesar de que es sin ocr 
+
     async procesarCargaMasiva(archivos, userId, opciones = {}) {
-        const { useOcr = false, loteSize = 5 } = opciones; // Reducir loteSize para OCR
+        const { useOcr = false, loteSize = 5, loteId = null, origen = 'DIRECTO' } = opciones; // Reducir loteSize para OCR
 
         try {
             const resultados = {
@@ -442,6 +528,8 @@ class CargaMasivaService {
                 for (let i = 0; i < archivos.length; i += loteSize) {
                     const lote = archivos.slice(i, i + loteSize);
                     const promesas = lote.map(async (archivo) => {
+                        let proceso = null; // importante para poder actualizarlo en catch
+
                         try {
                             // Parsear nombre del archivo
                             const datosArchivo = this.parsearNombreArchivo(archivo.nombre);
@@ -449,11 +537,41 @@ class CargaMasivaService {
                             // Buscar o crear autorización
                             const autorizacionInfo = await this.buscarOCrearAutorizacion(datosArchivo, userId);
 
-                            // Procesar archivo
+                            // ================================
+                            //  CREAR REGISTRO (ANTES DE PROCESAR)
+                            // ================================
+                            proceso = await this.ocrProcesoModel.create({
+                                lote_id: loteId || `lote_sync_${Date.now()}_${userId}`,
+                                archivo_id: `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                nombre_archivo: archivo.nombre,
+                                autorizacion_id: autorizacionInfo.autorizacion.id,
+                                user_id: userId,
+                                estado: 'procesando',
+                                tipo_proceso: 'NORMAL',
+                                origen: origen,
+                                metadata: {
+                                    useOcr,
+                                    tamano: archivo.tamano
+                                }
+
+                            });
+
+                            // ================================
+                            //  PROCESAR ARCHIVO
+                            // ================================
                             const resultado = await this.procesarArchivoMasivo({
                                 ...archivo,
                                 nombreOriginal: datosArchivo.nombreOriginal
                             }, autorizacionInfo, userId);
+
+                            // ================================
+                            //  ACTUALIZAR A COMPLETADO
+                            // ================================
+                            await proceso.update({
+                                estado: 'completado',
+                                documento_id: resultado.documentoId,
+                                fecha_procesado: new Date()
+                            });
 
                             resultados.exitosos++;
                             resultados.detalles.push({
@@ -461,7 +579,19 @@ class CargaMasivaService {
                                 exito: true,
                                 ...resultado
                             });
+
                         } catch (error) {
+
+                            // ================================
+                            //  ACTUALIZAR A FALLADO
+                            // ================================
+                            if (proceso) {
+                                await proceso.update({
+                                    estado: 'fallado',
+                                    error: error.message
+                                });
+                            }
+
                             resultados.fallidos++;
                             resultados.detalles.push({
                                 archivo: archivo.nombre,
@@ -470,6 +600,7 @@ class CargaMasivaService {
                             });
                         }
                     });
+
                     await Promise.all(promesas);
                 }
             }
@@ -630,8 +761,8 @@ class CargaMasivaService {
                     consecutivo1: datosArchivo.consecutivo1,
                     consecutivo2: datosArchivo.consecutivo2,
                     activo: true,
-                    fechaCreacion: new Date().toISOString().slice(0, 10),
-                    fechaSolicitud: new Date().toISOString().slice(0, 10)
+                    // fechaCreacion: new Date().toISOString().slice(0, 10),
+                    // fechaSolicitud: new Date().toISOString().slice(0, 10)
                 });
 
             }
@@ -881,7 +1012,7 @@ class CargaMasivaService {
                     checksum_sha256: checksumSha256,
                     estado_ocr: 'completado',
                     texto_ocr: textResult.text,
-                    fecha_digitalizacion: new Date(),
+                    // fecha_digitalizacion: new Date(),
                     digitalizado_por: userId,
                     version_archivo: version,
                     total_paginas: this.estimarPaginas(pdfResult.pdfBuffer)
@@ -1010,9 +1141,15 @@ class CargaMasivaService {
             where: { user_id: userId },
             attributes: [
                 ['lote_id', 'loteId'],
+                ['tipo_proceso', 'tipoProceso'],
+                ['origen', 'origen'],
+
                 [fn('COUNT', col('id')), 'totalArchivos'],
+
                 [fn('SUM', literal(`CASE WHEN estado = 'completado' THEN 1 ELSE 0 END`)), 'completados'],
+
                 [fn('SUM', literal(`CASE WHEN estado = 'fallado' THEN 1 ELSE 0 END`)), 'fallados'],
+
                 [
                     fn(
                         'ARRAY_AGG',
@@ -1020,45 +1157,55 @@ class CargaMasivaService {
                     ),
                     'errores'
                 ],
+
                 [
                     fn(
                         'JSON_AGG',
                         literal(`
-                    CASE 
-                        WHEN estado = 'completado' THEN
-                        json_build_object(
-                            'nombreArchivo', nombre_archivo,
-                            'documentoId', documento_id,
-                            'metadata', metadata,
-                            'fechaProcesado', fecha_procesado
-                        )
-                        ELSE NULL
-                    END
+                        CASE 
+                            WHEN estado = 'completado' THEN
+                                json_build_object(
+                                    'nombreArchivo', nombre_archivo,
+                                    'documentoId', documento_id,
+                                    'metadata', metadata,
+                                    'fechaProcesado', fecha_procesado
+                                )
+                            ELSE NULL
+                        END
                     `)
                     ),
                     'archivosProcesados'
                 ],
+
                 [fn('MAX', col('created_at')), 'ultimoProceso']
             ],
-            group: ['lote_id'],
+
+            group: ['lote_id', 'tipo_proceso', 'origen'], //  IMPORTANTE
             order: [[literal('"ultimoProceso"'), 'DESC']],
+            limit,
+            offset,
             raw: true
         });
 
         return lotes.map(lote => ({
             loteId: lote.loteId,
+            tipoProceso: lote.tipoProceso,
+            origen: lote.origen,
+
             totalArchivos: Number(lote.totalArchivos),
             completados: Number(lote.completados),
             fallados: Number(lote.fallados),
+
             porcentaje: lote.totalArchivos > 0
                 ? Math.round((lote.completados / lote.totalArchivos) * 100)
                 : 0,
+
             errores: (lote.errores || []).filter(Boolean),
             archivosProcesados: (lote.archivosProcesados || []).filter(Boolean),
             ultimoProceso: lote.ultimoProceso
         }));
-
     }
+
     // async listarLotesPorUsuario(userId, limit = 20, offset = 0) {
     //     const { fn, col, literal } = this.ocrProcesoModel.sequelize;
 
@@ -1069,20 +1216,8 @@ class CargaMasivaService {
     //         attributes: [
     //             ['lote_id', 'loteId'],
     //             [fn('COUNT', col('id')), 'totalArchivos'],
-    //             [
-    //                 fn(
-    //                     'SUM',
-    //                     literal(`CASE WHEN estado = 'completado' THEN 1 ELSE 0 END`)
-    //                 ),
-    //                 'completados'
-    //             ],
-    //             [
-    //                 fn(
-    //                     'SUM',
-    //                     literal(`CASE WHEN estado = 'fallado' THEN 1 ELSE 0 END`)
-    //                 ),
-    //                 'fallados'
-    //             ],
+    //             [fn('SUM', literal(`CASE WHEN estado = 'completado' THEN 1 ELSE 0 END`)), 'completados'],
+    //             [fn('SUM', literal(`CASE WHEN estado = 'fallado' THEN 1 ELSE 0 END`)), 'fallados'],
     //             [
     //                 fn(
     //                     'ARRAY_AGG',
@@ -1090,12 +1225,28 @@ class CargaMasivaService {
     //                 ),
     //                 'errores'
     //             ],
+    //             [
+    //                 fn(
+    //                     'JSON_AGG',
+    //                     literal(`
+    //                 CASE 
+    //                     WHEN estado = 'completado' THEN
+    //                     json_build_object(
+    //                         'nombreArchivo', nombre_archivo,
+    //                         'documentoId', documento_id,
+    //                         'metadata', metadata,
+    //                         'fechaProcesado', fecha_procesado
+    //                     )
+    //                     ELSE NULL
+    //                 END
+    //                 `)
+    //                 ),
+    //                 'archivosProcesados'
+    //             ],
     //             [fn('MAX', col('created_at')), 'ultimoProceso']
     //         ],
     //         group: ['lote_id'],
     //         order: [[literal('"ultimoProceso"'), 'DESC']],
-    //         limit,
-    //         offset,
     //         raw: true
     //     });
 
@@ -1108,47 +1259,12 @@ class CargaMasivaService {
     //             ? Math.round((lote.completados / lote.totalArchivos) * 100)
     //             : 0,
     //         errores: (lote.errores || []).filter(Boolean),
+    //         archivosProcesados: (lote.archivosProcesados || []).filter(Boolean),
     //         ultimoProceso: lote.ultimoProceso
     //     }));
+
     // }
 
-    // async listarLotesPorUsuario(userId, limit = 20, offset = 0) {
-    //     const { fn, col, literal } = this.ocrProcesoModel.sequelize;
-    //     await this.reconciliarProcesosOCRPendientes(userId);
-
-    //     const lotes = await this.ocrProcesoModel.findAll({
-    //         where: {
-    //             user_id: userId
-    //         }, // aquí sí va en camelCase
-    //         attributes: [
-    //             ['lote_id', 'loteId'],
-    //             [fn('COUNT', col('id')), 'totalArchivos'],
-    //             [
-    //                 fn(
-    //                     'SUM',
-    //                     literal("CASE WHEN estado = 'completado' THEN 1 ELSE 0 END")
-    //                 ),
-    //                 'completados'
-    //             ],
-    //             [fn('MAX', col('created_at')), 'ultimoProceso']
-    //         ],
-    //         group: ['lote_id'],
-    //         order: [[literal('"ultimoProceso"'), 'DESC']],
-    //         limit,
-    //         offset,
-    //         raw: true
-    //     });
-
-    //     return lotes.map(lote => ({
-    //         loteId: lote.loteId,
-    //         totalArchivos: Number(lote.totalArchivos) || 0,
-    //         completados: Number(lote.completados) || 0,
-    //         porcentaje: lote.totalArchivos > 0
-    //             ? Math.round((lote.completados / lote.totalArchivos) * 100)
-    //             : 0,
-    //         ultimoProceso: lote.ultimoProceso
-    //     }));
-    // }
 
     /**
      * Iniciar procesamiento directo OCR asíncrono

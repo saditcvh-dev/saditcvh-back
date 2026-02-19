@@ -3,7 +3,7 @@ const { Sequelize } = require("sequelize");
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
     dialect: "postgres",
     logging: false,
-
+    timezone: '-06:00',
     pool: {
         max: 20,
         min: 0,

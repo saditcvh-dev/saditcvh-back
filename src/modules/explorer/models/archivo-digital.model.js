@@ -103,7 +103,8 @@ const ArchivoDigital = sequelize.define("ArchivoDigital", {
     },
     fecha_digitalizacion: {
         type: DataTypes.DATE,
-        allowNull: true,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
         field: 'fecha_digitalizacion'
     },
     digitalizado_por: {

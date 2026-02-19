@@ -109,8 +109,8 @@ crearAutorizacion = async (autorizacionData) => {
       modalidadId: autorizacionData.modalidad_id,
       tipoId: autorizacionData.tipo_id,
       activo: true,
-      fechaSolicitud: autorizacionData.fecha_solicitud || new Date(),
-      fechaCreacion: new Date()
+    //   fechaSolicitud: autorizacionData.fecha_solicitud || new Date(),
+    //   fechaCreacion: new Date()
     };
 
     return await this.autorizacionModel.create(data);
