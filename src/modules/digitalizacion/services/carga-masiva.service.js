@@ -927,7 +927,10 @@ class CargaMasivaService {
                 OCRProcessorService.descargarPDFConOCR(pythonPdfId),
                 OCRProcessorService.descargarTextoOCR(pythonPdfId)
             ]);
-
+            console.log("pdfResult:**************************************24022026", pdfResult);
+            console.log("textResult:", textResult);
+            console.log("typeof textResult.text:", typeof textResult.text);
+            console.log("isArray:", Array.isArray(textResult.text));
             if (pdfResult.error || textResult.error) {
                 if (pdfResult.error?.includes('404') || textResult.error?.includes('404')) {
                     console.log(`Recursos aún no disponibles para ${proceso.nombreArchivo}, reintentando...`);
