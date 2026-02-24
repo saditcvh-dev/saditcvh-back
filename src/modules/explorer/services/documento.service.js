@@ -118,7 +118,7 @@ class DocumentoService {
                 checksum_md5: checksumMd5,
                 checksum_sha256: checksumSha256,
                 estado_ocr: 'pendiente',
-                // fecha_digitalizacion: new Date(),
+                fecha_digitalizacion: new Date(),
                 digitalizado_por: userId,
                 version_archivo: 1,
                 total_paginas: 1
