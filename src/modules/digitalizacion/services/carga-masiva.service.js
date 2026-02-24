@@ -230,7 +230,16 @@ class CargaMasivaService {
 
             // Determinar si procesamos con OCR
             let bufferFinal = archivoData.buffer;
-            let textoOCR = null;
+            let textoOCRFinal = null;
+
+            if (typeof textResult.text === 'string') {
+                textoOCRFinal = textResult.text;
+            } else if (textResult.text?.status === 'pending') {
+                console.log('Texto aún no disponible, reintentando...');
+                return { success: false, retry: true };
+            } else {
+                textoOCRFinal = JSON.stringify(textResult.text);
+            }
             let estadoOCR = 'pendiente';
 
             if (useOcr) {
