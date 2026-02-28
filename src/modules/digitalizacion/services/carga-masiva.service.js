@@ -231,7 +231,7 @@ class CargaMasivaService {
             // Determinar si procesamos con OCR
             let bufferFinal = archivoData.buffer;
             let textoOCR = null;
-            let estadoOCR = 'pendiente';
+            let estadoOCR = useOcr ? 'pendiente' : 'no_aplica';
 
             if (useOcr) {
                 estadoOCR = 'procesando';
