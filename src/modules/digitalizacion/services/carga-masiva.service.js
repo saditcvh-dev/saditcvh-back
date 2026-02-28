@@ -178,29 +178,36 @@ class CargaMasivaService {
                         returning: true // Asegurar que devuelva el registro creado
                     });
                 } catch (createError) {
-                    // Si falla por trigger, intentar buscar de nuevo
-                    if (createError.name === 'SequelizeUniqueConstraintError') {
-                        autorizacion = await this.autorizacionModel.findOne({
-                            where: {
-                                municipioId: municipio.id,
-                                modalidadId: modalidad.id,
-                                tipoId: tipoAutorizacion.id,
-                                consecutivo1: datosArchivo.consecutivo1,
-                                consecutivo2: datosArchivo.consecutivo2
-                            },
-                            transaction
-                        });
+                // El error de base de datos invalida la transacción actual, por lo que no podemos hacer
+                // el findOne dentro de la transacción original sin que explote PostgreSQL con el error 25P02.
+                // Lo más seguro es cancelar la transacción actual y hacer todo en una nueva.
+                await transaction.rollback();
 
-                        if (!autorizacion) {
-                            throw createError;
+                if (createError.name === 'SequelizeUniqueConstraintError') {
+                    // Si falló por duplicado, la buscamos por fuera de la transacción fallida
+                    autorizacion = await this.autorizacionModel.findOne({
+                        where: {
+                            municipioId: municipio.id,
+                            modalidadId: modalidad.id,
+                            tipoId: tipoAutorizacion.id,
+                            consecutivo1: datosArchivo.consecutivo1,
+                            consecutivo2: datosArchivo.consecutivo2
                         }
-                    } else {
+                    });
+
+                    if (!autorizacion) {
                         throw createError;
                     }
+                    return { autorizacion, municipio, modalidad, tipoAutorizacion };
+                } else {
+                    throw createError;
                 }
             }
+        }
 
+        if (!transaction.finished) {
             await transaction.commit();
+        }
             return { autorizacion, municipio, modalidad, tipoAutorizacion };
         } catch (error) {
             await transaction.rollback();
