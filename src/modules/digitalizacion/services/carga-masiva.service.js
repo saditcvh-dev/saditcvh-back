@@ -753,19 +753,40 @@ class CargaMasivaService {
             });
 
             if (!autorizacion) {
+            try {
                 autorizacion = await this.autorizacionModel.create({
-                    numeroAutorizacion: datosArchivo.numeroAutorizacion, // 
+                    numeroAutorizacion: datosArchivo.numeroAutorizacion,
                     municipioId: municipio.id,
                     modalidadId: modalidad.id,
                     tipoId: tipoAutorizacion.id,
                     consecutivo1: datosArchivo.consecutivo1,
                     consecutivo2: datosArchivo.consecutivo2,
                     activo: true,
-                    fechaCreacion: new Date().toISOString().slice(0, 10),
-                    fechaSolicitud: new Date().toISOString().slice(0, 10)
+                    fechaCreacion: new Date(),
+                    fechaSolicitud: new Date()
                 });
-
+            } catch (createError) {
+                if (createError.name === 'SequelizeUniqueConstraintError') {
+                    autorizacion = await this.autorizacionModel.findOne({
+                        where: {
+                            municipioId: municipio.id,
+                            modalidadId: modalidad.id,
+                            tipoId: tipoAutorizacion.id,
+                            consecutivo1: datosArchivo.consecutivo1,
+                            consecutivo2: datosArchivo.consecutivo2
+                        },
+                        attributes: [
+                            'id',
+                            'numeroAutorizacion',
+                            'nombreCarpeta'
+                        ]
+                    });
+                    if (!autorizacion) throw createError;
+                } else {
+                    throw createError;
+                }
             }
+        }
 
             return {
                 autorizacion,
