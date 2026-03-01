@@ -281,7 +281,7 @@ class DocumentoController {
             const { id } = req.params;
             const userId = req.user.id;
 
-            const archivo = await documentoService.obtenerArchivoPorDocumentoId(id);
+            const archivo = await documentoService.obtenerArchivoDigital(id);
 
             if (!archivo) {
                 return res.status(404).json({
