@@ -34,15 +34,35 @@ class CargaMasivaController {
             }
 
             const useOcr = req.body.useOcr === 'true';
-            
+
+            // 1. Extraer archivos y validar la nomenclatura ANTES de procesar
+            const archivos = await CargaMasivaService.extraerArchivosComprimidos(
+                req.file.buffer,
+                extension
+            );
+
+            if (archivos.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'No se encontraron archivos PDF dentro del archivo proporcionado'
+                });
+            }
+
+            const validos = archivos.filter(a => !a.errorNomenclatura);
+            if (validos.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Fallo al subir archivo: Ningún documento del ZIP cumple con la nomenclatura obligatoria.'
+                });
+            }
+
             if (useOcr) {
                 // Modo asíncrono: iniciar proceso y responder inmediatamente
                 const loteId = `lote_${Date.now()}_${userId}`;
                 
-                // Iniciar procesamiento en segundo plano
+                // Iniciar procesamiento en segundo plano (pasando el arreglo de archivos ya extraídos)
                 CargaMasivaService.iniciarProcesamientoOCRAsincrono(
-                    req.file.buffer,
-                    extension,
+                    validos,  // Solo enviamos los válidos
                     userId,
                     loteId
                 ).catch(error => {
@@ -60,29 +80,10 @@ class CargaMasivaController {
                     }
                 });
             } else {
-                // Modo sincrónico original (sin OCR o con OCR rápido)
-                const archivos = await CargaMasivaService.extraerArchivosComprimidos(
-                    req.file.buffer,
-                    extension
-                );
-
-                if (archivos.length === 0) {
-                    return res.status(400).json({
-                        success: false,
-                        message: 'No se encontraron archivos PDF en el comprimido'
-                    });
-                }
-
-                // const resultados = await CargaMasivaService.procesarCargaMasiva(
-                //     archivos,
-                //     userId,
-                //     { useOcr: false }
-                // );
-                // Generar loteId para proceso sincrónico
                 const loteId = `lote_sync_${Date.now()}_${userId}`;
 
                 const resultados = await CargaMasivaService.procesarCargaMasiva(
-                    archivos,
+                    archivos, // Se mandan todos, los inválidos dirán `Omitido` internamente en la validación del servicio
                     userId,
                     { 
                         useOcr: false,
