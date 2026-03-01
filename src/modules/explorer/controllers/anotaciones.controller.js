@@ -151,14 +151,10 @@ class AnotacionesController {
     async obtenerPorDocumento(req, res) {
         try {
             const { documentoId } = req.params;
-            // Ya no necesitamos userId porque obtenemos por archivo_nombre
 
-            // En este caso, documentoId es realmente el nombre del archivo (archivo_nombre)
-            const archivoNombre = documentoId;
-
-            const anotaciones = await anotacionService.obtenerAnotacionesPorArchivoSinUsuario(
-                archivoNombre
-            );
+            // En este caso el frontend manda el ID numérico del documento, así que
+            // debemos buscar dentro de la metadata utilizando la función correcta:
+            const anotaciones = await anotacionService.obtenerAnotacionesPorDocumento(documentoId);
 
             await auditService.createLog(req, {
                 action: 'OBTENER_ANOTACIONES',
@@ -166,7 +162,7 @@ class AnotacionesController {
                 entityId: null,
                 details: {
                     message: 'Anotaciones obtenidas correctamente',
-                    archivo_nombre: archivoNombre,
+                    documento_id: documentoId,
                     total_anotaciones: anotaciones.length,
                     status: 'SUCCESS'
                 }
