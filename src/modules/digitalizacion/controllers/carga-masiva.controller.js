@@ -4,8 +4,18 @@ const CargaMasivaService = require('../services/carga-masiva.service');
 
 class CargaMasivaController {
     // Procesar archivo comprimido (ZIP)
- async procesarArchivoComprimido(req, res) {
+    async procesarArchivoComprimido(req, res) {
         try {
+            console.log('--- RECIBIENDO ARCHIVO COMPRIMIDO (BACKEND) ---');
+            console.log('¿Hay archivo en el request?:', !!req.file);
+            console.log('Datos del archivo recibido:', req.file ? {
+                originalname: req.file.originalname,
+                mimetype: req.file.mimetype,
+                size: req.file.size
+            } : 'Ninguno');
+            console.log('Cuerpo de la petición (req.body):', req.body);
+            console.log('-----------------------------------------------');
+
             if (!req.file) {
                 return res.status(400).json({
                     success: false,
