@@ -493,6 +493,36 @@ class AnotacionService {
     }
 
     /**
+     * Exporta todas las anotaciones de un documento (ID numerico)
+     */
+    async exportarAnotaciones(documentoId) {
+        try {
+            const anotaciones = await this.obtenerAnotacionesPorDocumento(documentoId);
+
+            return {
+                metadata: {
+                    version: '1.0',
+                    fecha_exportacion: new Date().toISOString(),
+                    total_anotaciones: anotaciones.length,
+                    documento_id: documentoId
+                },
+                anotaciones: anotaciones.map(anot => ({
+                    id: anot.id,
+                    archivo_nombre: anot.archivo_nombre,
+                    documento_url: anot.documento_url,
+                    usuario_id: anot.usuario_id,
+                    comentarios: anot.comentarios,
+                    metadata: anot.metadata,
+                    created_at: anot.created_at
+                }))
+            };
+        } catch (error) {
+            console.error('❌ Error en exportarAnotaciones:', error);
+            throw new Error(`Error al exportar anotaciones de documento: ${error.message}`);
+        }
+    }
+
+    /**
      * Verifica si existe la tabla de anotaciones
      */
     async verificarTablaAnotaciones() {
