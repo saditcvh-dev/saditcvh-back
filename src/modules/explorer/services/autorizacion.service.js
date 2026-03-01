@@ -260,7 +260,10 @@ crearAutorizacion = async (autorizacionData) => {
 		try {
 			const autorizacion = await this.autorizacionModel.findOne({
 				where: {
-					numeroAutorizacion: numero
+					[Op.or]: [
+						{ numeroAutorizacion: numero },
+						{ nombreCarpeta: numero }
+					]
 				},
 				include: [{
 					model: this.municipioModel,
