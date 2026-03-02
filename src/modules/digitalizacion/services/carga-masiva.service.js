@@ -1139,7 +1139,8 @@ class CargaMasivaService {
         const { fn, col, literal } = this.ocrProcesoModel.sequelize;
 
         await this.reconciliarProcesosOCRPendientes(userId);
-        const pythonResponse = await OCRProcessorService.listarProcesos();
+        const ocrService = new OCRProcessorService();
+        const pythonResponse = await ocrService.listarProcesos();
         const pdfs = pythonResponse.pdfs || [];
         const lotes = await this.ocrProcesoModel.findAll({
             where: { user_id: userId },
@@ -1402,7 +1403,8 @@ class CargaMasivaService {
         setTimeout(async () => {
             try {
                 // Verificar estado nuevamente
-                const estado = await OCRProcessorService.verificarEstadoOCRUnico(
+                const ocrService = new OCRProcessorService();
+                const estado = await ocrService.verificarEstadoOCRUnico(
                     proceso.metadata.taskId
                 );
 
@@ -1432,7 +1434,8 @@ class CargaMasivaService {
         if (!pendientes.length) return;
 
         // Una sola llamada a Python
-        const response = await OCRProcessorService.listarProcesos();
+        const ocrService = new OCRProcessorService();
+        const response = await ocrService.listarProcesos();
         const pdfs = response.pdfs || [];
 
         for (const proceso of pendientes) {
