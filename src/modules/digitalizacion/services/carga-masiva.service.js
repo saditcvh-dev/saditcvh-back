@@ -841,7 +841,7 @@ class CargaMasivaService {
 
                 // **CORRECCIÓN 1: Verificar estado SIN loops internos**
                 const estado = await OCRProcessorService.verificarEstadoOCRUnico(
-                    proceso.metadata.taskId,
+                    proceso.metadata.pythonPdfId,
                     5000 // Timeout de 5 segundos
                 );
 
