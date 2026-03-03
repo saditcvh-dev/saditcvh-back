@@ -286,6 +286,11 @@ class CargaMasivaService {
             // Guardar archivo físicamente (con OCR aplicado si corresponde)
             await fs.writeFile(rutaArchivo, bufferFinal);
 
+            // NUEVO: Notificar a Python sobre la nueva ruta
+            const pdfIdParaPython = nombreArchivo.replace(/\.pdf$/i, '');
+            OCRProcessorService.actualizarRutaFinal(pdfIdParaPython, rutaArchivo).catch(console.error);
+
+
             // Calcular checksums del archivo final
             const checksumMd5 = crypto.createHash('md5').update(bufferFinal).digest('hex');
             const checksumSha256 = crypto.createHash('sha256').update(bufferFinal).digest('hex');
@@ -929,7 +934,7 @@ class CargaMasivaService {
             ]);
 
             if (pdfResult.error || textResult.error) {
-                if (pdfResult.error?.includes('404') || textResult.error?.includes('404')|| pdfResult.error?.includes('202') || textResult.error?.includes('202')) {
+                if (pdfResult.error?.includes('404') || textResult.error?.includes('404') || pdfResult.error?.includes('202') || textResult.error?.includes('202')) {
                     console.log(`Recursos aún no disponibles para ${proceso.nombreArchivo}, reintentando...`);
                     // Volver a poner en cola para verificación posterior
                     // this.reprogramarVerificacion(proceso, autorizacionInfo, userId, archivoData);
@@ -937,9 +942,9 @@ class CargaMasivaService {
                 }
                 throw new Error(`Error descargando resultados: ${pdfResult.error || textResult.error}`);
             }
-            if ( textResult?.text && typeof textResult.text === 'object' && textResult.text.status === 'pending' ) {
-                console.log(`OCR aún procesándose (${textResult.text.progress || 0}%) para ${proceso.nombreArchivo}`); 
-                return { success: false, retry: true }; 
+            if (textResult?.text && typeof textResult.text === 'object' && textResult.text.status === 'pending') {
+                console.log(`OCR aún procesándose (${textResult.text.progress || 0}%) para ${proceso.nombreArchivo}`);
+                return { success: false, retry: true };
             }
             // **CORRECCIÓN 3: Solo ahora abrir transacción para guardar en BD**
             const transaction = await this.documentoModel.sequelize.transaction();
@@ -981,6 +986,13 @@ class CargaMasivaService {
 
                 // Guardar archivo con OCR
                 await fs.writeFile(rutaArchivo, pdfResult.pdfBuffer);
+
+                // NUEVO: Notificar a Python sobre la nueva ruta
+                const pdfIdParaPython = nombreArchivo.replace(/\.pdf$/i, '');
+                OCRProcessorService.actualizarRutaFinal(pdfIdParaPython, rutaArchivo).catch(console.error);
+
+                // Opcional: También actualizar la UUID original para que el status task apunte correctamente
+                OCRProcessorService.actualizarRutaFinal(pythonPdfId, rutaArchivo).catch(console.error);
 
                 // Calcular checksums
                 const checksumMd5 = crypto.createHash('md5').update(pdfResult.pdfBuffer).digest('hex');
@@ -1192,35 +1204,35 @@ class CargaMasivaService {
         });
         return lotes.map(lote => {
 
-        // Usar los PDFs del lote que Python conoce
-        const procesosDelLote = pdfs.filter(p =>
-            p.task_id &&
-            lote.archivosProcesados
-                ?.map(a => a?.metadata?.taskId)
-                .includes(p.task_id)
-        );
+            // Usar los PDFs del lote que Python conoce
+            const procesosDelLote = pdfs.filter(p =>
+                p.task_id &&
+                lote.archivosProcesados
+                    ?.map(a => a?.metadata?.taskId)
+                    .includes(p.task_id)
+            );
 
-        // PDFs actualmente procesándose 
-        // Solo para este lote
-        const procesosEnCurso = pdfs.filter(p =>
-            p.task_id &&
-            p.status === 'processing' &&
-            lote.archivosProcesados
-                ?.map(a => a?.metadata?.taskId)
-                .includes(p.task_id)
-        );
+            // PDFs actualmente procesándose 
+            // Solo para este lote
+            const procesosEnCurso = pdfs.filter(p =>
+                p.task_id &&
+                p.status === 'processing' &&
+                lote.archivosProcesados
+                    ?.map(a => a?.metadata?.taskId)
+                    .includes(p.task_id)
+            );
 
-        const todosProcesos = [...procesosDelLote, ...procesosEnCurso];
+            const todosProcesos = [...procesosDelLote, ...procesosEnCurso];
 
-        const numCompleted = Number(lote.completados) || 0;
-        const sumProgressEnCurso = procesosEnCurso.reduce((acc, p) => acc + (p.progress || 0), 0);
-        const totalConocidosParaProgreso = numCompleted + procesosEnCurso.length;
+            const numCompleted = Number(lote.completados) || 0;
+            const sumProgressEnCurso = procesosEnCurso.reduce((acc, p) => acc + (p.progress || 0), 0);
+            const totalConocidosParaProgreso = numCompleted + procesosEnCurso.length;
 
-        const progresoPromedio = totalConocidosParaProgreso > 0
-            ? Math.round(((numCompleted * 100) + sumProgressEnCurso) / (numCompleted + todosProcesos.length))
-            : 0;
+            const progresoPromedio = totalConocidosParaProgreso > 0
+                ? Math.round(((numCompleted * 100) + sumProgressEnCurso) / (numCompleted + todosProcesos.length))
+                : 0;
 
-        const paginasTotales = todosProcesos.reduce((acc, p) => acc + (p.pages || 0), 0);
+            const paginasTotales = todosProcesos.reduce((acc, p) => acc + (p.pages || 0), 0);
 
             const porcentajeFinal = lote.totalArchivos > 0
                 ? Math.round((lote.completados / lote.totalArchivos) * 100)

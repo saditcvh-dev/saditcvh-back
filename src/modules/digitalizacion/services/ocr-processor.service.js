@@ -97,7 +97,7 @@ class OCRProcessorService {
             };
         }
     }
-    
+
     /**
      * Listar todos los procesos OCR
      * Carga Masiva Service aun lo usa para calcular reportes
@@ -218,6 +218,24 @@ class OCRProcessorService {
                 success: false,
                 error: error.message
             };
+        }
+    }
+
+    /**
+     * Actualizar la ruta final del documento en Python para que aparezca en `/list` 
+     * sin necesidad de escanear el root folder.
+     */
+    async actualizarRutaFinal(pdfId, nuevaRuta) {
+        try {
+            await axios.put(
+                `${this.pythonBaseURL}/update-final-path/${pdfId}`,
+                { new_path: nuevaRuta },
+                { timeout: 10000 }
+            );
+            console.log(`Ruta actualizada en la API de Python para ${pdfId}: ${nuevaRuta}`);
+        } catch (error) {
+            console.error(`Error actualizando ruta en la API de Python para ${pdfId}:`, error.message);
+            // No detenemos el flujo si esto falla
         }
     }
 }
