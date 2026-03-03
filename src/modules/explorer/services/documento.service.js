@@ -307,6 +307,7 @@ class DocumentoService {
     try {
       const documentos = await Documento.findAll({
         where: { autorizacionId },
+        paranoid: false,
         include: [
           {
             model: ArchivoDigital,
