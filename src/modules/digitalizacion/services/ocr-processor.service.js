@@ -1,4 +1,3 @@
-// services/ocr-processor.service.js
 const axios = require('axios');
 const FormData = require('form-data');
 
@@ -18,6 +17,7 @@ class OCRProcessorService {
     async enviarPDFParaOCR(pdfBuffer, filename) {
         try {
             const formData = new FormData();
+
             formData.append('file', pdfBuffer, {
                 filename,
                 contentType: 'application/pdf'
@@ -35,7 +35,7 @@ class OCRProcessorService {
             return {
                 success: true,
                 taskId: response.data.task_id || "",
-                pythonPdfId: response.data.pdf_id, // ESTE es el que se usa para /upload-status y descargas
+                pythonPdfId: response.data.id, // EXTRAE EL 'id' devuelto por python (no pdf_id)
                 status: 'pending'
             };
 
@@ -44,6 +44,7 @@ class OCRProcessorService {
                 'Error enviando PDF a Python:',
                 error.response?.data || error.message
             );
+
             return {
                 success: false,
                 error: error.response?.data || error.message
@@ -52,11 +53,13 @@ class OCRProcessorService {
     }
 
     /**
+     * Verificar estado de OCR - SIN polling interno
      * Verificar estado en Python SIN /list
      * Usa /upload-status/{pdf_id}
      */
     async verificarEstadoOCRUnico(pythonPdfId, timeoutMs = 10000) {
         try {
+            // Hacer UNA sola consulta a Python
             const response = await axios.get(
                 `${this.pythonBaseURL}/upload-status/${pythonPdfId}`,
                 { timeout: timeoutMs }
@@ -76,6 +79,7 @@ class OCRProcessorService {
             };
 
         } catch (error) {
+            console.error(`Error verificando estado OCR: ${error.message}`);
             // 404 => pdf_id aún no registrado en status (raro, pero posible por timing)
             const statusCode = error.response?.status;
             const detail = error.response?.data?.detail;
@@ -91,6 +95,17 @@ class OCRProcessorService {
                 taskId: ""
             };
         }
+    }
+
+    /**
+     * Listar todos los procesos OCR
+     * Carga Masiva Service aun lo usa para calcular reportes
+     */
+    async listarProcesos(timeoutMs = 10000) {
+        const response = await axios.get(`${this.pythonBaseURL}/list`, {
+            timeout: timeoutMs
+        });
+        return response.data;
     }
 
     /**
@@ -110,6 +125,7 @@ class OCRProcessorService {
                 contentType: response.headers['content-type'] || 'application/pdf'
             };
         } catch (error) {
+            console.error('Error descargando PDF con OCR:', error.message);
             return {
                 success: false,
                 error: error.response?.data?.detail || error.message,
@@ -129,13 +145,12 @@ class OCRProcessorService {
                 { timeout: 120000 }
             );
 
-            // Si FastAPI devuelve FileResponse, puede venir como string o buffer según axios config
-            // Aquí lo dejamos flexible
             return {
                 success: true,
                 text: response.data?.text ?? response.data
             };
         } catch (error) {
+            console.error('Error descargando texto OCR:', error.message);
             return {
                 success: false,
                 error: error.response?.data?.detail || error.message,
@@ -155,12 +170,14 @@ class OCRProcessorService {
         } = opciones;
 
         try {
+            // 1. Enviar a Python
             const envio = await this.enviarPDFParaOCR(pdfBuffer, filename);
             if (!envio.success) throw new Error(envio.error);
 
             const pythonPdfId = envio.pythonPdfId;
             const start = Date.now();
 
+            // 2. Esperar procesamiento
             // Poll hasta completed/failed/timeout
             while (true) {
                 const estado = await this.verificarEstadoOCRUnico(pythonPdfId, 10000);
@@ -177,6 +194,7 @@ class OCRProcessorService {
                 await new Promise(r => setTimeout(r, pollMs));
             }
 
+            // 3. Descargar resultados
             const [pdfResult, textResult] = await Promise.all([
                 this.descargarPDFConOCR(pythonPdfId),
                 this.descargarTextoOCR(pythonPdfId)
@@ -199,6 +217,24 @@ class OCRProcessorService {
                 success: false,
                 error: error.message
             };
+        }
+    }
+
+    /**
+     * Actualizar la ruta final del documento en Python para que aparezca en `/list` 
+     * sin necesidad de escanear el root folder.
+     */
+    async actualizarRutaFinal(pdfId, nuevaRuta) {
+        try {
+            await axios.put(
+                `${this.pythonBaseURL}/update-final-path/${pdfId}`,
+                { new_path: nuevaRuta },
+                { timeout: 10000 }
+            );
+            console.log(`Ruta actualizada en la API de Python para ${pdfId}: ${nuevaRuta}`);
+        } catch (error) {
+            console.error(`Error actualizando ruta en la API de Python para ${pdfId}:`, error.message);
+            // No detenemos el flujo si esto falla
         }
     }
 }
