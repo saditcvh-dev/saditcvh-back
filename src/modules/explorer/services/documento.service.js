@@ -459,14 +459,42 @@ class DocumentoService {
         { transaction },
       );
 
+      // 2.5 Obtener la versión máxima generada para este historial de documento
+      const documentoPadreId =
+        documentoOriginal.documento_padre_id || documentoOriginal.id;
+      const maximaVersionItem = await Documento.findOne({
+        where: {
+          [Op.or]: [
+            { id: documentoPadreId },
+            { documento_padre_id: documentoPadreId },
+          ],
+        },
+        attributes: [
+          [
+            Documento.sequelize.fn("MAX", Documento.sequelize.col("version")),
+            "max_version",
+          ],
+        ],
+        paranoid: false, // Buscar incluso en las versiones eliminadas lógicamente
+        transaction,
+      });
+
+      // Si por alguna razón falla el MAX, cae de vuelta en la versión del documento modificado + 1
+      const maxVersionHistorial = maximaVersionItem
+        ? maximaVersionItem.get("max_version")
+        : documentoOriginal.version;
+      const nuevaVersionNumero =
+        (maxVersionHistorial
+          ? parseInt(maxVersionHistorial)
+          : documentoOriginal.version) + 1;
+
       // 3. Crear nueva versión
       const nuevaVersionData = {
         ...documentoOriginal.toJSON(),
         id: undefined, // Para que cree nuevo registro
-        version: documentoOriginal.version + 1,
+        version: nuevaVersionNumero,
         version_actual: true,
-        documento_padre_id:
-          documentoOriginal.documento_padre_id || documentoOriginal.id,
+        documento_padre_id: documentoPadreId,
         titulo: data.titulo || documentoOriginal.titulo,
         descripcion: data.descripcion || documentoOriginal.descripcion,
         fechaDocumento: data.fechaDocumento || documentoOriginal.fechaDocumento,
@@ -536,17 +564,23 @@ class DocumentoService {
         throw new Error("La versión especificada no existe");
       }
 
-      // 2. Verificar cuántas versiones quedan en TODA la autorización
-      // (Dado que el frontend muestra todos los documentos como una sola línea de tiempo)
-      const autorizacionId = versionEliminar.autorizacionId;
+      // 2. Verificar cuántas versiones quedan en el historial de ESTE documento
+      const documentoPadreId =
+        versionEliminar.documento_padre_id || versionEliminar.id;
 
       const versionesRestantes = await Documento.count({
-        where: { autorizacionId },
+        where: {
+          [Op.or]: [
+            { id: documentoPadreId },
+            { documento_padre_id: documentoPadreId },
+          ],
+        },
         paranoid: true, // Aseguramos que solo cuente las NO eliminadas
+        transaction,
       });
 
       console.log(
-        `Eliminando versión (ID: ${versionId}) de la autorización ${autorizacionId}. Quedan activas globalmente: ${versionesRestantes}`,
+        `Eliminando versión (ID: ${versionId}) del documento base ${documentoPadreId}. Quedan activas en este historial: ${versionesRestantes}`,
       );
 
       if (versionesRestantes <= 1) {
@@ -557,11 +591,14 @@ class DocumentoService {
         );
       }
 
-      // 3. Si era la actual, transferir el poder a la versión anterior viva de la autorización
+      // 3. Si era la actual, transferir el poder a la versión anterior viva del MISMO documento
       if (versionEliminar.version_actual) {
         const versionAnterior = await Documento.findOne({
           where: {
-            autorizacionId: autorizacionId,
+            [Op.or]: [
+              { id: documentoPadreId },
+              { documento_padre_id: documentoPadreId },
+            ],
             id: { [Op.ne]: versionEliminar.id },
           },
           order: [
