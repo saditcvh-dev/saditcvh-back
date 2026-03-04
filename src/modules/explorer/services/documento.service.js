@@ -317,48 +317,67 @@ class DocumentoService {
         throw new Error("Documento no encontrado");
       }
 
+      const docJson = documento.toJSON();
+
       // Hack para Sequelize V6: Cargar manualmente los archivos de las versiones borradas logicamente (paranoid issue workaround)
-      if (documento.versiones && documento.versiones.length > 0) {
-        const versionesCarentesId = documento.versiones
-          .filter(
-            (v) =>
-              v.deleted_at &&
-              (!v.archivosDigitales || v.archivosDigitales.length === 0),
-          )
-          .map((v) => v.id);
-        if (versionesCarentesId.length > 0) {
-          const missingArchivos = await ArchivoDigital.findAll({
-            where: { documento_id: versionesCarentesId },
-            paranoid: false,
-            include: [
-              {
-                model: User,
-                as: "digitalizadoPor",
-                required: false,
-                paranoid: false,
-                attributes: [
-                  "id",
-                  "first_name",
-                  "last_name",
-                  "second_last_name",
-                  "email",
-                ],
-              },
-            ],
-          });
-          // Agrupar e inyectar
-          documento.versiones.forEach((v) => {
-            if (versionesCarentesId.includes(v.id)) {
-              v.dataValues.archivosDigitales = missingArchivos.filter(
+      const idsRevision = [];
+      if (
+        docJson.deleted_at &&
+        (!docJson.archivosDigitales || docJson.archivosDigitales.length === 0)
+      ) {
+        idsRevision.push(docJson.id);
+      }
+      if (docJson.versiones && docJson.versiones.length > 0) {
+        docJson.versiones.forEach((v) => {
+          if (
+            v.deleted_at &&
+            (!v.archivosDigitales || v.archivosDigitales.length === 0)
+          ) {
+            idsRevision.push(v.id);
+          }
+        });
+      }
+
+      if (idsRevision.length > 0) {
+        const missingArchivosModels = await ArchivoDigital.findAll({
+          where: { documento_id: idsRevision },
+          paranoid: false,
+          include: [
+            {
+              model: User,
+              as: "digitalizadoPor",
+              required: false,
+              paranoid: false,
+              attributes: [
+                "id",
+                "first_name",
+                "last_name",
+                "second_last_name",
+                "email",
+              ],
+            },
+          ],
+        });
+        const missingArchivos = missingArchivosModels.map((m) => m.toJSON());
+
+        // Inyectar
+        if (idsRevision.includes(docJson.id)) {
+          docJson.archivosDigitales = missingArchivos.filter(
+            (a) => a.documento_id === docJson.id,
+          );
+        }
+        if (docJson.versiones) {
+          docJson.versiones.forEach((v) => {
+            if (idsRevision.includes(v.id)) {
+              v.archivosDigitales = missingArchivos.filter(
                 (a) => a.documento_id === v.id,
               );
-              v.archivosDigitales = v.dataValues.archivosDigitales;
             }
           });
         }
       }
 
-      return documento;
+      return docJson;
     } catch (error) {
       throw new Error(`Error al obtener documento: ${error.message}`);
     }
@@ -366,7 +385,7 @@ class DocumentoService {
 
   async obtenerDocumentosPorAutorizacion(autorizacionId, userId) {
     try {
-      const documentos = await Documento.findAll({
+      const documentosModels = await Documento.findAll({
         where: {
           autorizacionId,
           documento_padre_id: null, // Solo traer documentos raíz
@@ -432,11 +451,19 @@ class DocumentoService {
         order: [["created_at", "DESC"]],
       });
 
-      if (userId && documentos.length > 0) {
+      const documentos = documentosModels.map((d) => d.toJSON());
+
+      if (documentos.length > 0) {
         // --- INICIO WORKAROUND SEQUELIZE V6 ---
         // Cargar manualmente los archivos de versiones de cualquier documento borrado logicamente
         const idsRevision = [];
         documentos.forEach((doc) => {
+          if (
+            doc.deleted_at &&
+            (!doc.archivosDigitales || doc.archivosDigitales.length === 0)
+          ) {
+            idsRevision.push(doc.id);
+          }
           if (doc.versiones && doc.versiones.length > 0) {
             doc.versiones.forEach((v) => {
               if (
@@ -450,7 +477,7 @@ class DocumentoService {
         });
 
         if (idsRevision.length > 0) {
-          const recuperados = await ArchivoDigital.findAll({
+          const recuperadosModels = await ArchivoDigital.findAll({
             where: { documento_id: idsRevision },
             paranoid: false,
             include: [
@@ -469,21 +496,29 @@ class DocumentoService {
               },
             ],
           });
+          const recuperados = recuperadosModels.map((m) => m.toJSON());
+
           documentos.forEach((doc) => {
+            if (idsRevision.includes(doc.id)) {
+              doc.archivosDigitales = recuperados.filter(
+                (a) => a.documento_id === doc.id,
+              );
+            }
             if (doc.versiones) {
               doc.versiones.forEach((v) => {
                 if (idsRevision.includes(v.id)) {
-                  v.dataValues.archivosDigitales = recuperados.filter(
+                  v.archivosDigitales = recuperados.filter(
                     (a) => a.documento_id === v.id,
                   );
-                  v.archivosDigitales = v.dataValues.archivosDigitales;
                 }
               });
             }
           });
         }
         // --- FIN WORKAROUND ---
+      }
 
+      if (userId && documentos.length > 0) {
         let archivoRegistrado = false;
 
         for (const documento of documentos) {
