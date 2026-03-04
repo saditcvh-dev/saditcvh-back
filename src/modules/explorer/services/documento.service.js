@@ -359,6 +359,7 @@ class DocumentoService {
                 ],
               },
             ],
+            order: [["version", "DESC"]],
           },
         ],
         order: [["created_at", "DESC"]],
