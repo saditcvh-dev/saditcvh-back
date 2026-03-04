@@ -728,13 +728,15 @@ class DocumentoService {
         }
       }
 
-      // 4. Eliminar logicamente los archivos (paranoid: true hara el trabajo)
+      // 4. Eliminar logicamente los archivos (bypass a paranoid)
       if (
         versionEliminar.archivosDigitales &&
         versionEliminar.archivosDigitales.length > 0
       ) {
         for (let arc of versionEliminar.archivosDigitales) {
-          await arc.destroy({ transaction });
+          // Si ejecutamos destroy() hará Hard Delete porque no tiene timestamps: true
+          // Se inyecta la fecha directamente para simular el Soft Delete
+          await arc.update({ deleted_at: new Date() }, { transaction });
         }
       }
 
