@@ -253,6 +253,7 @@ class DocumentoService {
             as: "archivosDigitales",
             required: false,
             paranoid: false, // Permitir obtener archivos borrados logicamente para ver por qué se eliminaron
+            separate: true,
             include: [
               {
                 model: User,
@@ -290,6 +291,7 @@ class DocumentoService {
                 as: "archivosDigitales",
                 required: false,
                 paranoid: false, // Ver también el archivo original aunque esté borrado
+                separate: true,
                 include: [
                   {
                     model: User,
@@ -335,6 +337,7 @@ class DocumentoService {
             as: "archivosDigitales",
             required: false,
             paranoid: false,
+            separate: true,
             include: [
               {
                 model: User,
@@ -364,6 +367,7 @@ class DocumentoService {
                 as: "archivosDigitales",
                 required: false,
                 paranoid: false,
+                separate: true,
                 include: [
                   {
                     model: User,
