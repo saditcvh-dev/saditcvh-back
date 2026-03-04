@@ -508,22 +508,17 @@ class DocumentoService {
         throw new Error("La versión especificada no existe");
       }
 
-      // 2. Verificar cuántas versiones quedan
-      const documentoPadre =
-        versionEliminar.documento_padre_id || versionEliminar.id;
+      // 2. Verificar cuántas versiones quedan en TODA la autorización
+      // (Dado que el frontend muestra todos los documentos como una sola línea de tiempo)
+      const autorizacionId = versionEliminar.autorizacionId;
 
       const versionesRestantes = await Documento.count({
-        where: {
-          [Op.or]: [
-            { id: documentoPadre },
-            { documento_padre_id: documentoPadre },
-          ],
-        },
+        where: { autorizacionId },
         paranoid: true, // Aseguramos que solo cuente las NO eliminadas
       });
 
       console.log(
-        `Eliminando versión ${versionId} de la familia ${documentoPadre}. Quedan activas: ${versionesRestantes}`,
+        `Eliminando versión (ID: ${versionId}) de la autorización ${autorizacionId}. Quedan activas globalmente: ${versionesRestantes}`,
       );
 
       if (versionesRestantes <= 1) {
@@ -534,17 +529,17 @@ class DocumentoService {
         );
       }
 
-      // 3. Si era la actual, transferir el poder a la versión anterior viva
+      // 3. Si era la actual, transferir el poder a la versión anterior viva de la autorización
       if (versionEliminar.version_actual) {
         const versionAnterior = await Documento.findOne({
           where: {
-            [Op.or]: [
-              { id: documentoPadre },
-              { documento_padre_id: documentoPadre },
-            ],
+            autorizacionId: autorizacionId,
             id: { [Op.ne]: versionEliminar.id },
           },
-          order: [["version", "DESC"]],
+          order: [
+            ["version", "DESC"],
+            ["created_at", "DESC"],
+          ],
           transaction,
         });
 
