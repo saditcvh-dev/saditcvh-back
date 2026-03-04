@@ -257,6 +257,8 @@ class DocumentoService {
               {
                 model: User,
                 as: "digitalizadoPor",
+                required: false,
+                paranoid: false,
                 attributes: [
                   "id",
                   "first_name",
@@ -292,6 +294,8 @@ class DocumentoService {
                   {
                     model: User,
                     as: "digitalizadoPor",
+                    required: false,
+                    paranoid: false,
                     attributes: [
                       "id",
                       "first_name",
@@ -335,6 +339,8 @@ class DocumentoService {
               {
                 model: User,
                 as: "digitalizadoPor",
+                required: false,
+                paranoid: false,
                 attributes: [
                   "id",
                   "first_name",
@@ -362,6 +368,8 @@ class DocumentoService {
                   {
                     model: User,
                     as: "digitalizadoPor",
+                    required: false,
+                    paranoid: false,
                     attributes: [
                       "id",
                       "first_name",
