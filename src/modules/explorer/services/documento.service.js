@@ -317,6 +317,47 @@ class DocumentoService {
         throw new Error("Documento no encontrado");
       }
 
+      // Hack para Sequelize V6: Cargar manualmente los archivos de las versiones borradas logicamente (paranoid issue workaround)
+      if (documento.versiones && documento.versiones.length > 0) {
+        const versionesCarentesId = documento.versiones
+          .filter(
+            (v) =>
+              v.deleted_at &&
+              (!v.archivosDigitales || v.archivosDigitales.length === 0),
+          )
+          .map((v) => v.id);
+        if (versionesCarentesId.length > 0) {
+          const missingArchivos = await ArchivoDigital.findAll({
+            where: { documento_id: versionesCarentesId },
+            paranoid: false,
+            include: [
+              {
+                model: User,
+                as: "digitalizadoPor",
+                required: false,
+                paranoid: false,
+                attributes: [
+                  "id",
+                  "first_name",
+                  "last_name",
+                  "second_last_name",
+                  "email",
+                ],
+              },
+            ],
+          });
+          // Agrupar e inyectar
+          documento.versiones.forEach((v) => {
+            if (versionesCarentesId.includes(v.id)) {
+              v.dataValues.archivosDigitales = missingArchivos.filter(
+                (a) => a.documento_id === v.id,
+              );
+              v.archivosDigitales = v.dataValues.archivosDigitales;
+            }
+          });
+        }
+      }
+
       return documento;
     } catch (error) {
       throw new Error(`Error al obtener documento: ${error.message}`);
@@ -392,6 +433,57 @@ class DocumentoService {
       });
 
       if (userId && documentos.length > 0) {
+        // --- INICIO WORKAROUND SEQUELIZE V6 ---
+        // Cargar manualmente los archivos de versiones de cualquier documento borrado logicamente
+        const idsRevision = [];
+        documentos.forEach((doc) => {
+          if (doc.versiones && doc.versiones.length > 0) {
+            doc.versiones.forEach((v) => {
+              if (
+                v.deleted_at &&
+                (!v.archivosDigitales || v.archivosDigitales.length === 0)
+              ) {
+                idsRevision.push(v.id);
+              }
+            });
+          }
+        });
+
+        if (idsRevision.length > 0) {
+          const recuperados = await ArchivoDigital.findAll({
+            where: { documento_id: idsRevision },
+            paranoid: false,
+            include: [
+              {
+                model: User,
+                as: "digitalizadoPor",
+                required: false,
+                paranoid: false,
+                attributes: [
+                  "id",
+                  "first_name",
+                  "last_name",
+                  "second_last_name",
+                  "email",
+                ],
+              },
+            ],
+          });
+          documentos.forEach((doc) => {
+            if (doc.versiones) {
+              doc.versiones.forEach((v) => {
+                if (idsRevision.includes(v.id)) {
+                  v.dataValues.archivosDigitales = recuperados.filter(
+                    (a) => a.documento_id === v.id,
+                  );
+                  v.archivosDigitales = v.dataValues.archivosDigitales;
+                }
+              });
+            }
+          });
+        }
+        // --- FIN WORKAROUND ---
+
         let archivoRegistrado = false;
 
         for (const documento of documentos) {
