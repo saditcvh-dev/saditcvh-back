@@ -317,67 +317,7 @@ class DocumentoService {
         throw new Error("Documento no encontrado");
       }
 
-      const docJson = documento.toJSON();
-
-      // Hack para Sequelize V6: Cargar manualmente los archivos de las versiones borradas logicamente (paranoid issue workaround)
-      const idsRevision = [];
-      if (
-        docJson.deleted_at &&
-        (!docJson.archivosDigitales || docJson.archivosDigitales.length === 0)
-      ) {
-        idsRevision.push(docJson.id);
-      }
-      if (docJson.versiones && docJson.versiones.length > 0) {
-        docJson.versiones.forEach((v) => {
-          if (
-            v.deleted_at &&
-            (!v.archivosDigitales || v.archivosDigitales.length === 0)
-          ) {
-            idsRevision.push(v.id);
-          }
-        });
-      }
-
-      if (idsRevision.length > 0) {
-        const missingArchivosModels = await ArchivoDigital.findAll({
-          where: { documento_id: idsRevision },
-          paranoid: false,
-          include: [
-            {
-              model: User,
-              as: "digitalizadoPor",
-              required: false,
-              paranoid: false,
-              attributes: [
-                "id",
-                "first_name",
-                "last_name",
-                "second_last_name",
-                "email",
-              ],
-            },
-          ],
-        });
-        const missingArchivos = missingArchivosModels.map((m) => m.toJSON());
-
-        // Inyectar
-        if (idsRevision.includes(docJson.id)) {
-          docJson.archivosDigitales = missingArchivos.filter(
-            (a) => a.documento_id === docJson.id,
-          );
-        }
-        if (docJson.versiones) {
-          docJson.versiones.forEach((v) => {
-            if (idsRevision.includes(v.id)) {
-              v.archivosDigitales = missingArchivos.filter(
-                (a) => a.documento_id === v.id,
-              );
-            }
-          });
-        }
-      }
-
-      return docJson;
+      return documento;
     } catch (error) {
       throw new Error(`Error al obtener documento: ${error.message}`);
     }
