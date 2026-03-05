@@ -323,12 +323,13 @@ class CargaMasivaService {
       // Guardar archivo físicamente (con OCR aplicado si corresponde)
       await fs.writeFile(rutaArchivo, bufferFinal);
 
-      // NUEVO: Notificar a Python sobre la nueva ruta
-      // const pdfIdParaPython = nombreArchivo.replace(/\.pdf$/i, "");
-      // OCRProcessorService.actualizarRutaFinal(
-      //   pdfIdParaPython,
-      //   rutaArchivo,
-      // ).catch(console.error);
+      // Después de escribir el archivo en disco
+      const pdfIdFinal = nombreArchivo.replace(/\.pdf$/i, '');
+      console.log(`[NOTIF_SINCRONO] Actualizando ruta en Python: ${pdfIdFinal} → ${rutaArchivo}`);
+
+      await OCRProcessorService.actualizarRutaFinal(pdfIdFinal, rutaArchivo).catch(err => {
+        console.error(`[ERROR_NOTIF_SINCRONO] Falló para ${pdfIdFinal}:`, err);
+      });
 
       // Calcular checksums del archivo final
       const checksumMd5 = crypto
@@ -445,35 +446,77 @@ class CargaMasivaService {
       throw new Error(`Error al crear carpetas: ${error.message}`);
     }
   }
+  /**
+   * Intenta parsear el nombre sin lanzar error (para detección segura de nomenclatura)
+   * @param {string} nombre - Nombre del archivo o carpeta
+   * @returns {{ success: boolean, ...datos? }}
+   */
+  parsearNombreArchivoSafe(nombre) {
+    try {
+      const sinExt = (nombre || '').replace(/\.pdf$/i, '').trim();
+      const sinPaginas = sinExt.replace(/\s*\(\d+\s*(pag\.?)?\)$/i, '');
 
+      const regex = /^(\d+)[_\s-]+(\d+)[_\s-]+(\d+)[_\s-]+(\d+)[_\s-]+(\d+)[_\s-]*([a-zA-Z]+)?/i;
+      const match = sinPaginas.match(regex);
+
+      if (!match) return { success: false };
+
+      return {
+        success: true,
+        numeroAutorizacion: match[1],
+        municipioNum: match[2].padStart(2, '0'),
+        modalidadNum: match[3].padStart(2, '0'),
+        consecutivo1: match[4].padStart(2, '0'),
+        consecutivo2: match[5].padStart(3, '0'),
+        tipoAbrev: match[6] ? match[6].toUpperCase() : null,
+      };
+    } catch {
+      return { success: false };
+    }
+  }
   async generarNombreArchivoMasivo(autorizacion, nombreOriginal, version) {
     const extension = path.extname(nombreOriginal);
 
-    const esSinNomenclatura =
-      autorizacion.numeroAutorizacion?.startsWith('P-') ||
-      autorizacion.nombreCarpeta?.startsWith('P_');
+    // ────────────────────────────────────────────────
+    // ¿Tiene nomenclatura válida real?
+    // ────────────────────────────────────────────────
+    const parseoCarpeta = this.parsearNombreArchivoSafe(autorizacion?.nombreCarpeta || '');
+    const esConNomenclatura = parseoCarpeta.success;
 
     let baseName;
 
-    if (esSinNomenclatura) {
+    if (esConNomenclatura) {
+      // ──── CASO CON NOMENCLATURA (prioridad alta) ────
+      baseName = (autorizacion.nombreCarpeta || '')
+        .replace(/[\s-]+/g, "_")           // unificar separadores
+        .replace(/_+/g, "_")               // evitar __
+        .replace(/^_+|_+$/g, '')           // quitar extremos
+        .trim();
+
+      if (!baseName) {
+        baseName = `auth_${autorizacion.id || 'sin-id'}`;
+      }
+
+      const timestamp = Date.now();
+      baseName = `${baseName}_v${version}_${timestamp}`;
+    } else {
+      // ──── CASO SIN NOMENCLATURA o fallback ────
       baseName = path.basename(nombreOriginal, '.pdf')
         .replace(/[^a-zA-Z0-9-_áéíóúÁÉÍÓÚñÑ\s]/g, '_')
         .replace(/\s+/g, '_')
         .replace(/_+/g, '_')
         .replace(/^_+|_+$/g, '');
 
-      if (!baseName) baseName = 'archivo_subido';
+      if (!baseName || baseName.length < 3) {
+        baseName = `documento_${Date.now().toString().slice(-8)}`;
+      }
 
-      // Siempre agregamos la versión por defecto en sin nomenclatura
-      // Esto reduce mucho las colisiones
-      baseName = `${baseName}_v${version}`;
-    } else {
-      baseName = autorizacion.nombreCarpeta?.replace(/[\s-]/g, "_") ||
-        `auth_${autorizacion.id || "err"}`;
       baseName = `${baseName}_v${version}`;
     }
 
-    // Obtenemos la ruta (await obligatorio)
+    // ────────────────────────────────────────────────
+    // Obtener carpeta destino
+    // ────────────────────────────────────────────────
     const estructura = await this.construirEstructuraCarpetasNumericos({
       municipio: { id: autorizacion.municipio?.num || 85 },
       tipoAutorizacion: {
@@ -487,25 +530,28 @@ class CargaMasivaService {
 
     const rutaCompleta = estructura.rutaCompleta;
 
-    // Nombre inicial (ya incluye _vN)
     let nombreFinal = `${baseName}${extension}`;
     let rutaCandidata = path.join(rutaCompleta, nombreFinal);
     let contador = 1;
 
-    // Bucle defensivo: verificamos existencia real en disco
+    // Anti-colisión real (muy importante en cargas masivas)
     while (await this.existeArchivo(rutaCandidata)) {
-      if (esSinNomenclatura) {
-        nombreFinal = `${baseName} (${contador})${extension}`;
-      } else {
+      if (esConNomenclatura) {
+        // Para nomenclatura: sufijo numérico después del timestamp
         nombreFinal = `${baseName}_${contador}${extension}`;
+      } else {
+        // Para sin nomenclatura: más legible con paréntesis
+        const sinVersion = baseName.replace(/_v\d+$/, '');
+        nombreFinal = `${sinVersion} (${contador})_v${version}${extension}`;
       }
       rutaCandidata = path.join(rutaCompleta, nombreFinal);
       contador++;
     }
 
-    // Log muy útil para depurar
-    console.log(`[NOMBRE_GENERADO] ${nombreFinal} → ruta: ${rutaCandidata}`);
-    console.log(`[EXISTE_ANTES_ESCRITURA] ${await this.existeArchivo(rutaCandidata)}`);
+    // Logs útiles para depuración
+    console.log(
+      `[NOMBRE_ARCHIVO] ${esConNomenclatura ? 'CON NOMENCLATURA' : 'SIN NOMENCLATURA'} → ${nombreFinal} (ruta: ${rutaCandidata})`
+    );
 
     return nombreFinal;
   }
@@ -1096,8 +1142,13 @@ class CargaMasivaService {
   }
 
   /**
-   * Finalizar proceso OCR exitoso
-   */
+  * Finalizar proceso OCR exitoso
+  * @param {Object} proceso - Registro del proceso OCR en BD
+  * @param {Object} estado - Respuesta del estado desde Python
+  * @param {Object} autorizacionInfo - Info de autorización, municipio, etc.
+  * @param {number} userId - ID del usuario
+  * @param {Object} archivoData - Datos del archivo original
+  */
   async finalizarProcesoOCRExitoso(
     proceso,
     estado,
@@ -1106,53 +1157,52 @@ class CargaMasivaService {
     archivoData,
   ) {
     try {
-      // **CORRECCIÓN 1: Obtener pythonPdfId del estado**
-      console.log("estado recibido:", estado);
-      const pythonPdfId = estado.pythonPdfId;
+      console.log("[OCR_FINALIZAR] Estado recibido desde Python:", JSON.stringify(estado, null, 2));
 
+      const pythonPdfId = estado?.pythonPdfId;
       if (!pythonPdfId) {
-        throw new Error("pythonPdfId no disponible en el estado");
+        throw new Error("No se recibió pythonPdfId en el estado");
       }
 
-      // **CORRECCIÓN 2: Descargar resultados ANTES de abrir transacción**
+      // Descargar resultados ANTES de abrir transacción
       const [pdfResult, textResult] = await Promise.all([
         OCRProcessorService.descargarPDFConOCR(pythonPdfId),
         OCRProcessorService.descargarTextoOCR(pythonPdfId),
       ]);
 
+      // Manejo de errores de descarga
       if (pdfResult.error || textResult.error) {
+        const errMsg = pdfResult.error || textResult.error || "Error desconocido al descargar";
+        console.warn(`[OCR_DOWNLOAD_ERROR] ${errMsg} para ${proceso.nombre_archivo || proceso.nombreArchivo}`);
+
         if (
-          pdfResult.error?.includes("404") ||
-          textResult.error?.includes("404") ||
-          pdfResult.error?.includes("202") ||
-          textResult.error?.includes("202")
+          errMsg.includes("404") ||
+          errMsg.includes("not found") ||
+          errMsg.includes("202") ||
+          errMsg.includes("pending")
         ) {
-          console.log(
-            `Recursos aún no disponibles para ${proceso.nombreArchivo}, reintentando...`,
-          );
-          // Volver a poner en cola para verificación posterior
-          // this.reprogramarVerificacion(proceso, autorizacionInfo, userId, archivoData);
+          console.log(`[REINTENTAR] Recursos aún no listos → ${proceso.nombre_archivo || '[sin nombre]'}`);
           return { success: false, retry: true };
         }
-        throw new Error(
-          `Error descargando resultados: ${pdfResult.error || textResult.error}`,
-        );
+
+        throw new Error(`Fallo al descargar resultados: ${errMsg}`);
       }
+
+      // Verificar si OCR sigue pendiente
       if (
         textResult?.text &&
         typeof textResult.text === "object" &&
         textResult.text.status === "pending"
       ) {
         console.log(
-          `OCR aún procesándose (${textResult.text.progress || 0}%) para ${proceso.nombreArchivo}`,
+          `[OCR_AUN_PENDIENTE] Progreso: ${textResult.text.progress || 0}% → ${proceso.nombre_archivo || '[sin nombre]'}`
         );
         return { success: false, retry: true };
       }
-      // **CORRECCIÓN 3: Solo ahora abrir transacción para guardar en BD**
+
       const transaction = await this.documentoModel.sequelize.transaction();
 
       try {
-        // Buscar si ya existe documento
         const documentoExistente = await this.documentoModel.findOne({
           where: {
             autorizacionId: autorizacionInfo.autorizacion.id,
@@ -1161,7 +1211,6 @@ class CargaMasivaService {
           transaction,
         });
 
-        // Crear estructura de carpetas
         const estructura = await this.construirEstructuraCarpetasNumericos({
           municipio: { id: autorizacionInfo.municipio.num },
           tipoAutorizacion: {
@@ -1173,10 +1222,8 @@ class CargaMasivaService {
           nombreCarpeta: autorizacionInfo.autorizacion.nombreCarpeta,
         });
 
-        // Crear carpetas
         await this.crearEstructuraCarpetas(estructura.rutaCompleta);
 
-        // Generar nombre de archivo
         const version = documentoExistente ? documentoExistente.version + 1 : 1;
         const nombreArchivo = await this.generarNombreArchivoMasivo(
           autorizacionInfo.autorizacion,
@@ -1186,40 +1233,37 @@ class CargaMasivaService {
 
         const rutaArchivo = path.join(estructura.rutaCompleta, nombreArchivo);
 
-        // Guardar archivo con OCR
         await fs.writeFile(rutaArchivo, pdfResult.pdfBuffer);
 
-        // NUEVO: Notificar a Python sobre la nueva ruta
-        // const pdfIdParaPython = nombreArchivo.replace(/\.pdf$/i, "");
-        // OCRProcessorService.actualizarRutaFinal(
-        //   pdfIdParaPython,
-        //   rutaArchivo,
-        // ).catch(console.error);
+        // ────────────────────────────────────────────────
+        // ¡ESTO ES LO QUE FALTABA! Notificar el nombre FINAL
+        // ────────────────────────────────────────────────
+        const pdfIdFinal = nombreArchivo.replace(/\.pdf$/i, '');
 
-        // Opcional: También actualizar la UUID original para que el status task apunte correctamente
-        OCRProcessorService.actualizarRutaFinal(pythonPdfId, rutaArchivo).catch(
-          console.error,
+        console.log(
+          `[NOTIFICAR_PYTHON_FINAL] pdf_id versionado: ${pdfIdFinal} → ${rutaArchivo}`
         );
 
-        // Calcular checksums
-        const checksumMd5 = crypto
-          .createHash("md5")
-          .update(pdfResult.pdfBuffer)
-          .digest("hex");
-        const checksumSha256 = crypto
-          .createHash("sha256")
-          .update(pdfResult.pdfBuffer)
-          .digest("hex");
+        // Notificación PRINCIPAL (esto actualiza el ID en Python)
+        await OCRProcessorService.actualizarRutaFinal(pdfIdFinal, rutaArchivo).catch(err => {
+          console.error(`[ERROR_NOTIF_FINAL] Falló para ${pdfIdFinal}:`, err);
+        });
 
-        // Si existe documento anterior, marcarlo como no actual
-        if (documentoExistente) {
-          await documentoExistente.update(
-            { version_actual: false },
-            { transaction },
-          );
+        // Notificación secundaria (compatibilidad con el ID temporal)
+        if (pythonPdfId && pythonPdfId !== pdfIdFinal) {
+          console.log(`[NOTIF_COMPAT] Actualizando también ID temporal: ${pythonPdfId}`);
+          await OCRProcessorService.actualizarRutaFinal(pythonPdfId, rutaArchivo).catch(err => {
+            console.warn(`[WARN_COMPAT] ${pythonPdfId}:`, err);
+          });
         }
 
-        // Crear nuevo documento
+        const checksumMd5 = crypto.createHash("md5").update(pdfResult.pdfBuffer).digest("hex");
+        const checksumSha256 = crypto.createHash("sha256").update(pdfResult.pdfBuffer).digest("hex");
+
+        if (documentoExistente) {
+          await documentoExistente.update({ version_actual: false }, { transaction });
+        }
+
         const nuevoDocumento = await this.documentoModel.create(
           {
             autorizacionId: autorizacionInfo.autorizacion.id,
@@ -1234,18 +1278,14 @@ class CargaMasivaService {
             paginas: this.estimarPaginas(pdfResult.pdfBuffer),
             creadoPor: userId,
           },
-          { transaction },
+          { transaction }
         );
 
-        // Crear registro de archivo digital
         await this.archivoDigitalModel.create(
           {
             documento_id: nuevoDocumento.id,
             nombre_archivo: nombreArchivo,
-            ruta_almacenamiento: path.join(
-              estructura.rutaRelativa,
-              nombreArchivo,
-            ),
+            ruta_almacenamiento: path.join(estructura.rutaRelativa, nombreArchivo),
             mime_type: "application/pdf",
             tamano_bytes: pdfResult.pdfBuffer.length,
             checksum_md5: checksumMd5,
@@ -1257,45 +1297,43 @@ class CargaMasivaService {
             version_archivo: version,
             total_paginas: this.estimarPaginas(pdfResult.pdfBuffer),
           },
-          { transaction },
+          { transaction }
         );
 
-        // Actualizar proceso OCR
         await proceso.update(
           {
             estado: "completado",
-            documentoId: nuevoDocumento.id,
-            fechaProcesado: new Date(),
+            documento_id: nuevoDocumento.id,
+            fecha_procesado: new Date(),
             metadata: {
               ...proceso.metadata,
               documentoId: nuevoDocumento.id,
-              rutaArchivo: rutaArchivo,
+              rutaArchivo,
+              pdfIdFinal,  // ← guardamos para referencia futura
             },
           },
-          { transaction },
+          { transaction }
         );
 
         await transaction.commit();
-        const nombreLog =
-          proceso.nombreArchivo ||
-          proceso.nombre_archivo ||
-          proceso.archivo_id ||
-          "[sin-nombre]";
-        console.log(`Proceso OCR completado: ${nombreLog}`);
+
+        const nombreLog = proceso.nombre_archivo || proceso.nombreArchivo || proceso.archivo_id || "[sin-nombre]";
+        console.log(`[OCR_COMPLETADO] Éxito → ${nombreLog} → Doc ID: ${nuevoDocumento.id} → Archivo: ${nombreArchivo}`);
+
         return { success: true, documentoId: nuevoDocumento.id };
       } catch (error) {
         await transaction.rollback();
+        console.error(`[OCR_TRANS_ROLLBACK] Error en transacción:`, error);
         throw error;
       }
     } catch (error) {
-      console.error(`Error finalizando OCR ${proceso.nombreArchivo}:`, error);
+      console.error(`[OCR_FINALIZAR_ERROR] Fallo general en ${proceso.nombre_archivo || '[sin nombre]'}:`, error);
 
-      // Actualizar proceso con error
       await proceso.update({
-        estado: "fallado",
+        estado: proceso.intentos >= (proceso.maxIntentos || 3) ? "fallado" : "pendiente",
         error: error.message,
-        intentos: proceso.intentos + 1,
-      });
+        intentos: (proceso.intentos || 0) + 1,
+      }).catch(e => console.error("[UPDATE_FAIL] No se pudo actualizar proceso:", e));
 
       throw error;
     }
