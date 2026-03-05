@@ -312,7 +312,7 @@ class CargaMasivaService {
 
       // Generar nombre de archivo
       const version = documentoExistente ? documentoExistente.version + 1 : 1;
-      const nombreArchivo = this.generarNombreArchivoMasivo(
+      const nombreArchivo = await this.generarNombreArchivoMasivo(
         autorizacion,
         archivoData.nombre,
         version,
@@ -668,7 +668,7 @@ class CargaMasivaService {
           const lote = archivos.slice(i, i + loteSize);
           const promesas = lote.map(async (archivo) => {
             let proceso = null; // importante para poder actualizarlo en catch
-
+            let resultado = null;
             try {
               // Parsear nombre del archivo
               const datosArchivo = this.obtenerDatosArchivo(archivo.nombre, {
@@ -1172,7 +1172,7 @@ class CargaMasivaService {
 
         // Generar nombre de archivo
         const version = documentoExistente ? documentoExistente.version + 1 : 1;
-        const nombreArchivo = this.generarNombreArchivoMasivo(
+        const nombreArchivo = await this.generarNombreArchivoMasivo(
           autorizacionInfo.autorizacion,
           archivoData.nombre,
           version,
