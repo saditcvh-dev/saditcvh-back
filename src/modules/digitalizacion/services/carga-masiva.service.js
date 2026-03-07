@@ -385,7 +385,9 @@ class CargaMasivaService {
 
       if (esSinNomenclatura && nombreOriginal) {
         whereClause.descripcion = {
+
           [Op.like]: `%${nombreOriginal}%`,
+          [Op.like]: `%${nombreOriginal}%`
         };
       }
 
@@ -843,6 +845,24 @@ class CargaMasivaService {
             let proceso = null; // importante para poder actualizarlo en catch
             let resultado = null;
             try {
+              // ================================
+              //  CREAR REGISTRO TEMPRANO (ANTES DE PARSEAR)
+              // ================================
+              proceso = await this.ocrProcesoModel.create({
+                lote_id: loteId || `lote_sync_${Date.now()}_${userId}`,
+                archivo_id: `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                nombre_archivo: archivo.nombre,
+                autorizacion_id: null, // Se asigna luego si es válido
+                user_id: userId,
+                estado: "procesando",
+                tipo_proceso: "NORMAL",
+                origen: origen,
+                metadata: {
+                  useOcr,
+                  tamano: archivo.tamano,
+                },
+              });
+
               // Parsear nombre del archivo
               const datosArchivo = await this.obtenerDatosArchivo(
                 archivo.nombre,
@@ -861,23 +881,7 @@ class CargaMasivaService {
                 userId,
               );
 
-              // ================================
-              //  CREAR REGISTRO (ANTES DE PROCESAR)
-              // ================================
-              proceso = await this.ocrProcesoModel.create({
-                lote_id: loteId || `lote_sync_${Date.now()}_${userId}`,
-                archivo_id: `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                nombre_archivo: archivo.nombre,
-                autorizacion_id: autorizacionInfo.autorizacion.id,
-                user_id: userId,
-                estado: "procesando",
-                tipo_proceso: "NORMAL",
-                origen: origen,
-                metadata: {
-                  useOcr,
-                  tamano: archivo.tamano,
-                },
-              });
+              await proceso.update({ autorizacion_id: autorizacionInfo.autorizacion.id });
 
               // ================================
               //  PROCESAR ARCHIVO
@@ -924,6 +928,23 @@ class CargaMasivaService {
                     error: `Warning: ${error.message} (pero documento creado)`,
                   });
                 }
+              } else {
+                // Por si falló antes del .create inicial
+                await this.ocrProcesoModel.create({
+                  lote_id: loteId || `lote_sync_${Date.now()}_${userId}`,
+                  archivo_id: `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                  nombre_archivo: archivo.nombre,
+                  autorizacion_id: null,
+                  user_id: userId,
+                  estado: "fallado",
+                  error: error.message,
+                  tipo_proceso: "NORMAL",
+                  origen: origen,
+                  metadata: {
+                    useOcr,
+                    tamano: archivo.tamano,
+                  },
+                });
               }
 
               resultados.fallidos++;
@@ -956,25 +977,17 @@ class CargaMasivaService {
     return await this.procesarCargaMasiva(archivosProcesados, userId, opciones);
   }
   /**
-   * Iniciar procesamiento OCR asíncrono para archivo comprimido
+   * Iniciar procesamiento OCR asíncrono para archivo comprimido o directorios de archivos
    */
   async iniciarProcesamientoOCRAsincrono(
-    archivoBuffer,
-    extension,
+    archivos,
     userId,
     loteId,
+    opciones = {}
   ) {
     try {
-      // Extraer archivos del comprimido
-      const datosArchivo = await this.obtenerDatosArchivo(archivo.nombre, {
-        allowSinNomenclatura: opciones?.allowSinNomenclatura || false,
-        municipioFallbackNum: opciones?.municipioFallbackNum,
-        modalidadFallbackNum: opciones?.modalidadFallbackNum,
-        tipoFallbackAbrev: opciones?.tipoFallbackAbrev,
-      });
-
-      if (archivos.length === 0) {
-        throw new Error("No se encontraron archivos PDF en el comprimido");
+      if (!archivos || archivos.length === 0) {
+        throw new Error("No se encontraron archivos PDF");
       }
 
       // Crear registros de lote en la base de datos
@@ -982,48 +995,43 @@ class CargaMasivaService {
       let asuncIndex = 0;
 
       for (const archivo of archivos) {
+        let autorizacionInfo = null;
+        let proceso = null;
+
         try {
+          proceso = await this.ocrProcesoModel.create({
+            lote_id: loteId,
+            archivo_id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            nombre_archivo: archivo.nombre || archivo.originalname,
+            autorizacion_id: null,
+            user_id: userId,
+            estado: "pendiente",
+            metadata: {
+              tamano: archivo.tamano || archivo.size,
+              rutaRelativa: archivo.rutaRelativa,
+            },
+          });
+
           const datosArchivo = await this.obtenerDatosArchivo(
             archivo.nombre,
             {
-              allowSinNomenclatura: false, // Para ZIP normal asumimos modo estricto
-              // Si más adelante quieres ZIP sin nomenclatura, pasa la opción desde el controller
+              allowSinNomenclatura: opciones?.allowSinNomenclatura || false,
+              municipioFallbackNum: opciones?.municipioFallbackNum,
+              modalidadFallbackNum: opciones?.modalidadFallbackNum,
+              tipoFallbackAbrev: opciones?.tipoFallbackAbrev,
             },
             asuncIndex++,
           );
+
           // Buscar o crear autorización (sin transacción larga)
-          const autorizacionInfo = await this.buscarOCrearAutorizacionRapido(
+          autorizacionInfo = await this.buscarOCrearAutorizacionRapido(
             datosArchivo,
             userId,
           );
 
-          // Crear registro de proceso OCR
-          // const proceso = await this.ocrProcesoModel.create({
-          //     loteId,
-          //     archivoId: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          //     nombreArchivo: archivo.nombre,
-          //     autorizacionId: autorizacionInfo.autorizacion.id,
-          //     userId,
-          //     estado: 'pendiente',
-          //     metadata: {
-          //         datosArchivo,
-          //         tamano: archivo.tamano,
-          //         rutaRelativa: archivo.rutaRelativa
-          //     }
-          // });
-
-          const proceso = await this.ocrProcesoModel.create({
-            lote_id: loteId,
-            archivo_id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            nombre_archivo: archivo.nombre,
-            autorizacion_id: autorizacionInfo.autorizacion.id,
-            user_id: userId,
-            estado: "pendiente",
-            metadata: {
-              datosArchivo,
-              tamano: archivo.tamano,
-              rutaRelativa: archivo.rutaRelativa,
-            },
+          await proceso.update({
+             autorizacion_id: autorizacionInfo.autorizacion.id,
+             metadata: { ...proceso.metadata, datosArchivo }
           });
           procesos.push(proceso);
 
@@ -1041,17 +1049,30 @@ class CargaMasivaService {
             console.error(`Error procesando ${archivo.nombre}:`, error);
           });
         } catch (error) {
-          console.error(`Error preparando ** ${archivo.nombre}:`, error);
-          // Crear registro fallado
-          await this.ocrProcesoModel.create({
-            loteId,
-            nombreArchivo: archivo.nombre,
-            autorizacionId: null,
-            userId,
-            estado: "fallado",
-            error: error.message,
-            metadata: { error: true },
-          });
+          console.error(`Error preparando ** ${archivo.nombre || archivo.originalname}:`, error);
+          
+          if (proceso) {
+            await proceso.update({
+              estado: "fallado",
+              error: error.message,
+              metadata: {
+                ...proceso.metadata,
+                error: true
+              }
+            });
+          } else {
+             // Por si falló antes del .create inicial
+             await this.ocrProcesoModel.create({
+               lote_id: loteId,
+               archivo_id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+               nombre_archivo: archivo.nombre || archivo.originalname,
+               autorizacion_id: null,
+               user_id: userId,
+               estado: "fallado",
+               error: error.message,
+               metadata: { error: true },
+             });
+          }
         }
       }
 
@@ -1813,7 +1834,7 @@ class CargaMasivaService {
   /**
    * Iniciar procesamiento directo OCR asíncrono
    */
-  async iniciarProcesamientoDirectoOCRAsincrono(archivos, userId, loteId) {
+  async iniciarProcesamientoDirectoOCRAsincrono(archivos, userId, loteId, opciones = {}) {
     try {
       const procesos = [];
       let directoIndex = 0;
@@ -1825,10 +1846,10 @@ class CargaMasivaService {
           const datosArchivo = await this.obtenerDatosArchivo(
             archivo.originalname,
             {
-              allowSinNomenclatura: true, // porque este método se llama SOLO desde el flujo sin-nomenclatura
-              municipioFallbackNum: 85,
-              modalidadFallbackNum: 52,
-              tipoFallbackAbrev: "P",
+              allowSinNomenclatura: opciones?.allowSinNomenclatura || true,
+              municipioFallbackNum: opciones?.municipioFallbackNum || 85,
+              modalidadFallbackNum: opciones?.modalidadFallbackNum || 52,
+              tipoFallbackAbrev: opciones?.tipoFallbackAbrev || "P",
             },
             directoIndex++,
           );
@@ -2013,6 +2034,7 @@ class CargaMasivaService {
     };
   }
   /**
+  /**
    * Obtiene datos de autorización: intenta parsear el nombre,
    * si falla y allowSinNomenclatura=true → usa fallback
    */
@@ -2036,6 +2058,7 @@ class CargaMasivaService {
       }
 
       // Modo sin nomenclatura → fallback buscando el consecutivo más alto tipo P-1, P-2
+      // Modo sin nomenclatura → fallback buscando el consecutivo más alto tipo P-1, P-2
       const municipioInfo = await this.municipioModel.findOne({
         where: { num: municipioFallbackNum },
       });
@@ -2047,7 +2070,6 @@ class CargaMasivaService {
       });
 
       let nextNumber = 1;
-
       if (municipioInfo && modalidadInfo && tipoInfo) {
         // Buscar las autorizaciones de este tipo para obtener el máximo consecutivo1
         const maxAuth = await this.autorizacionModel.findOne({
