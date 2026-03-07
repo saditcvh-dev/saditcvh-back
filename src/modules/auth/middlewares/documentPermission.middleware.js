@@ -4,10 +4,11 @@
  */
 const verifyDocumentMunicipality = async (req, res, next) => {
   try {
-    const db = require("../../../database/associations");
-    const Documento = db.Documento;
-    const ArchivoDigital = db.ArchivoDigital;
-    const Autorizacion = db.Autorizacion;
+    const sequelize = require("../../../config/db");
+
+    // Al obtener los modelos desde la instancia de sequelize
+    // evitamos cualquier bucle de dependencia circular en la inicialización
+    const { Documento, ArchivoDigital, Autorizacion } = sequelize.models;
 
     let municipioId = null;
 
