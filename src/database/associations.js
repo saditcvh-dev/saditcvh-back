@@ -7,10 +7,6 @@ const RolePermission = require("../modules/roles/models/rolePermission.model");
 const Municipio = require("../modules/municipios/models/municipio.model");
 const UserMunicipalityPermission = require("../modules/users/models/userMunicipalityPermission.model");
 const AuditLog = require("../modules/audit/models/auditLog.model");
-const Documento = require("../modules/explorer/models/documento.model");
-const ArchivoDigital = require("../modules/explorer/models/archivo-digital.model");
-const Autorizacion = require("../modules/explorer/models/autorizacion.model");
-
 User.belongsToMany(Role, {
   through: UserRole,
   foreignKey: "user_id",
@@ -82,7 +78,4 @@ module.exports = {
   Municipio,
   UserMunicipalityPermission,
   AuditLog,
-  Documento,
-  ArchivoDigital,
-  Autorizacion,
 };
