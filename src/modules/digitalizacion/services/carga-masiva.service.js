@@ -12,7 +12,13 @@ const User = require("../../users/models/user.model");
 const crypto = require("crypto");
 const { Op } = require("sequelize");
 const OCRProcessorService = require("./ocr-processor.service");
-const OCRProceso = require("../../digitalizacion/models/ocr-proceso.model"); // Añadir modelo
+const OCRProceso = require("../../digitalizacion/models/ocr-proceso.model");
+const {
+  UserMunicipalityPermission,
+  Permission,
+  Role,
+} = require("../../../database/associations");
+
 class CargaMasivaService {
   constructor() {
     this.autorizacionModel = Autorizacion;
@@ -22,6 +28,88 @@ class CargaMasivaService {
     this.documentoModel = Documento;
     this.archivoDigitalModel = ArchivoDigital;
     this.ocrProcesoModel = OCRProceso;
+  }
+
+  // NUEVA FUNCIÓN: Pre-validar permisos territoriales ("subir") en lote
+  async validarPermisosBatch(
+    archivosParsed,
+    userId,
+    checkNomenclatureSkip = false,
+  ) {
+    // 1. Es Administrador?
+    const user = await User.findByPk(userId, {
+      include: [
+        { model: Role, as: "roles", where: { id: 1 }, required: false },
+      ],
+    });
+    const isAdmin = user.roles && user.roles.length > 0;
+    if (isAdmin) return { success: true };
+
+    // 2. Extraer municipios únicos del batch
+    const municipiosNecesarios = new Set();
+    for (const archivo of archivosParsed) {
+      if (archivo.municipioNum)
+        municipiosNecesarios.add(parseInt(archivo.municipioNum, 10));
+      else if (checkNomenclatureSkip) municipiosNecesarios.add(85); // fallback para SP-N
+    }
+
+    // Si requiere bypass nomenclature y no es admin, exigimos explícitamente el 85
+    if (checkNomenclatureSkip) {
+      municipiosNecesarios.add(85);
+    }
+
+    if (municipiosNecesarios.size === 0) return { success: true };
+
+    // 3. Buscar IDs reales de municipios a partir del "num" (si vienen como num)
+    const municipiosDocs = await this.municipioModel.findAll({
+      where: { num: { [Op.in]: Array.from(municipiosNecesarios) } },
+    });
+    const mapNumToId = {};
+    municipiosDocs.forEach((m) => {
+      mapNumToId[m.num] = m.id;
+    });
+
+    // 4. Checar permisos del usuario (que tenga el permiso 'subir' en esos IDs)
+    const idsRequeridos = Array.from(municipiosNecesarios)
+      .map((num) => mapNumToId[num])
+      .filter(Boolean);
+
+    if (idsRequeridos.length === 0) {
+      return {
+        success: false,
+        message: "Municipios destino inválidos no encontrados en la base.",
+      };
+    }
+
+    const permisosEncontrados = await UserMunicipalityPermission.findAll({
+      where: {
+        user_id: userId,
+        municipio_id: { [Op.in]: idsRequeridos },
+        active: true,
+      },
+      include: [
+        {
+          model: Permission,
+          as: "permission",
+          where: { name: "subir", active: true },
+        },
+      ],
+    });
+
+    const municipiosAutorizados = new Set(
+      permisosEncontrados.map((p) => p.municipio_id),
+    );
+
+    for (const idReq of idsRequeridos) {
+      if (!municipiosAutorizados.has(idReq)) {
+        return {
+          success: false,
+          message: `Acceso denegado: No tienes permisos de 'subir' para uno o más municipios en este lote de archivos.`,
+        };
+      }
+    }
+
+    return { success: true };
   }
 
   // Extraer archivos de ZIP/RAR
@@ -297,7 +385,7 @@ class CargaMasivaService {
 
       if (esSinNomenclatura && nombreOriginal) {
         whereClause.descripcion = {
-          [Op.like]: `%${nombreOriginal}%`
+          [Op.like]: `%${nombreOriginal}%`,
         };
       }
 
@@ -335,10 +423,10 @@ class CargaMasivaService {
       await fs.writeFile(rutaArchivo, bufferFinal);
 
       // Después de escribir el archivo en disco
-      const pdfIdFinal = nombreArchivo.replace(/\.pdf$/i, '');
-      console.log(`[NOTIF_SINCRONO] Actualizando ruta en Python: ${pdfIdFinal} → ${rutaArchivo}`);
-
-
+      const pdfIdFinal = nombreArchivo.replace(/\.pdf$/i, "");
+      console.log(
+        `[NOTIF_SINCRONO] Actualizando ruta en Python: ${pdfIdFinal} → ${rutaArchivo}`,
+      );
 
       // Calcular checksums del archivo final
       const checksumMd5 = crypto
@@ -405,7 +493,10 @@ class CargaMasivaService {
       // }
 
       await transaction.commit();
-      await OCRProcessorService.actualizarRutaFinal(pdfIdFinal, rutaArchivo).catch(err => {
+      await OCRProcessorService.actualizarRutaFinal(
+        pdfIdFinal,
+        rutaArchivo,
+      ).catch((err) => {
         console.error(`[ERROR_NOTIF_SINCRONO] Falló para ${pdfIdFinal}:`, err);
       });
       return {
@@ -470,10 +561,11 @@ class CargaMasivaService {
    */
   parsearNombreArchivoSafe(nombre) {
     try {
-      const sinExt = (nombre || '').replace(/\.pdf$/i, '').trim();
-      const sinPaginas = sinExt.replace(/\s*\(\d+\s*(pag\.?)?\)$/i, '');
+      const sinExt = (nombre || "").replace(/\.pdf$/i, "").trim();
+      const sinPaginas = sinExt.replace(/\s*\(\d+\s*(pag\.?)?\)$/i, "");
 
-      const regex = /^(\d+)[_\s-]+(\d+)[_\s-]+(\d+)[_\s-]+(\d+)[_\s-]+(\d+)[_\s-]*([a-zA-Z]+)?/i;
+      const regex =
+        /^(\d+)[_\s-]+(\d+)[_\s-]+(\d+)[_\s-]+(\d+)[_\s-]+(\d+)[_\s-]*([a-zA-Z]+)?/i;
       const match = sinPaginas.match(regex);
 
       if (!match) return { success: false };
@@ -481,10 +573,10 @@ class CargaMasivaService {
       return {
         success: true,
         numeroAutorizacion: match[1],
-        municipioNum: match[2].padStart(2, '0'),
-        modalidadNum: match[3].padStart(2, '0'),
-        consecutivo1: match[4].padStart(2, '0'),
-        consecutivo2: match[5].padStart(3, '0'),
+        municipioNum: match[2].padStart(2, "0"),
+        modalidadNum: match[3].padStart(2, "0"),
+        consecutivo1: match[4].padStart(2, "0"),
+        consecutivo2: match[5].padStart(3, "0"),
         tipoAbrev: match[6] ? match[6].toUpperCase() : null,
       };
     } catch {
@@ -497,32 +589,35 @@ class CargaMasivaService {
     // ────────────────────────────────────────────────
     // ¿Tiene nomenclatura válida real?
     // ────────────────────────────────────────────────
-    const parseoCarpeta = this.parsearNombreArchivoSafe(autorizacion?.nombreCarpeta || '');
+    const parseoCarpeta = this.parsearNombreArchivoSafe(
+      autorizacion?.nombreCarpeta || "",
+    );
     const esConNomenclatura = parseoCarpeta.success;
 
     let baseName;
 
     if (esConNomenclatura) {
       // ──── CASO CON NOMENCLATURA (prioridad alta) ────
-      baseName = (autorizacion.nombreCarpeta || '')
-        .replace(/[\s-]+/g, "_")           // unificar separadores
-        .replace(/_+/g, "_")               // evitar __
-        .replace(/^_+|_+$/g, '')           // quitar extremos
+      baseName = (autorizacion.nombreCarpeta || "")
+        .replace(/[\s-]+/g, "_") // unificar separadores
+        .replace(/_+/g, "_") // evitar __
+        .replace(/^_+|_+$/g, "") // quitar extremos
         .trim();
 
       if (!baseName) {
-        baseName = `auth_${autorizacion.id || 'sin-id'}`;
+        baseName = `auth_${autorizacion.id || "sin-id"}`;
       }
 
       const timestamp = Date.now();
       baseName = `${baseName}_v${version}_${timestamp}`;
     } else {
       // ──── CASO SIN NOMENCLATURA o fallback ────
-      baseName = path.basename(nombreOriginal, '.pdf')
-        .replace(/[^a-zA-Z0-9-_áéíóúÁÉÍÓÚñÑ\s]/g, '_')
-        .replace(/\s+/g, '_')
-        .replace(/_+/g, '_')
-        .replace(/^_+|_+$/g, '');
+      baseName = path
+        .basename(nombreOriginal, ".pdf")
+        .replace(/[^a-zA-Z0-9-_áéíóúÁÉÍÓÚñÑ\s]/g, "_")
+        .replace(/\s+/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_+|_+$/g, "");
 
       if (!baseName || baseName.length < 3) {
         baseName = `documento_${Date.now().toString().slice(-8)}`;
@@ -538,7 +633,7 @@ class CargaMasivaService {
       municipio: { id: autorizacion.municipio?.num || 85 },
       tipoAutorizacion: {
         id: autorizacion.tipoAutorizacion?.id || 1,
-        abreviatura: autorizacion.tipoAutorizacion?.abreviatura || 'P',
+        abreviatura: autorizacion.tipoAutorizacion?.abreviatura || "P",
       },
       numero: autorizacion.numeroAutorizacion,
       consecutivo: autorizacion.consecutivo1,
@@ -558,7 +653,7 @@ class CargaMasivaService {
         nombreFinal = `${baseName}_${contador}${extension}`;
       } else {
         // Para sin nomenclatura: más legible con paréntesis
-        const sinVersion = baseName.replace(/_v\d+$/, '');
+        const sinVersion = baseName.replace(/_v\d+$/, "");
         nombreFinal = `${sinVersion} (${contador})_v${version}${extension}`;
       }
       rutaCandidata = path.join(rutaCompleta, nombreFinal);
@@ -567,7 +662,7 @@ class CargaMasivaService {
 
     // Logs útiles para depuración
     console.log(
-      `[NOMBRE_ARCHIVO] ${esConNomenclatura ? 'CON NOMENCLATURA' : 'SIN NOMENCLATURA'} → ${nombreFinal} (ruta: ${rutaCandidata})`
+      `[NOMBRE_ARCHIVO] ${esConNomenclatura ? "CON NOMENCLATURA" : "SIN NOMENCLATURA"} → ${nombreFinal} (ruta: ${rutaCandidata})`,
     );
 
     return nombreFinal;
@@ -699,22 +794,26 @@ class CargaMasivaService {
         let ocrIndex = 0;
         for (const archivo of archivos) {
           try {
-            const datosArchivo = await this.obtenerDatosArchivo(archivo.nombre, {
-              allowSinNomenclatura: opciones.allowSinNomenclatura || false,
-              municipioFallbackNum: opciones.municipioFallbackNum,
-              modalidadFallbackNum: opciones.modalidadFallbackNum,
-              tipoFallbackAbrev: opciones.tipoFallbackAbrev,
-            }, ocrIndex++);
+            const datosArchivo = await this.obtenerDatosArchivo(
+              archivo.nombre,
+              {
+                allowSinNomenclatura: opciones.allowSinNomenclatura || false,
+                municipioFallbackNum: opciones.municipioFallbackNum,
+                modalidadFallbackNum: opciones.modalidadFallbackNum,
+                tipoFallbackAbrev: opciones.tipoFallbackAbrev,
+              },
+              ocrIndex++,
+            );
             const autorizacionInfo = await this.buscarOCrearAutorizacion(
               datosArchivo,
               userId,
             );
 
             const resultado = await this.procesarArchivoMasivo(
-              { 
-                ...archivo, 
+              {
+                ...archivo,
                 nombreOriginal: datosArchivo.nombreOriginal,
-                esSinNomenclatura: datosArchivo.esSinNomenclatura
+                esSinNomenclatura: datosArchivo.esSinNomenclatura,
               },
               autorizacionInfo,
               userId,
@@ -745,12 +844,16 @@ class CargaMasivaService {
             let resultado = null;
             try {
               // Parsear nombre del archivo
-              const datosArchivo = await this.obtenerDatosArchivo(archivo.nombre, {
-                allowSinNomenclatura: opciones.allowSinNomenclatura || false,
-                municipioFallbackNum: opciones.municipioFallbackNum,
-                modalidadFallbackNum: opciones.modalidadFallbackNum,
-                tipoFallbackAbrev: opciones.tipoFallbackAbrev,
-              }, i + localIndex);
+              const datosArchivo = await this.obtenerDatosArchivo(
+                archivo.nombre,
+                {
+                  allowSinNomenclatura: opciones.allowSinNomenclatura || false,
+                  municipioFallbackNum: opciones.municipioFallbackNum,
+                  modalidadFallbackNum: opciones.modalidadFallbackNum,
+                  tipoFallbackAbrev: opciones.tipoFallbackAbrev,
+                },
+                i + localIndex,
+              );
 
               // Buscar o crear autorización
               const autorizacionInfo = await this.buscarOCrearAutorizacion(
@@ -818,7 +921,7 @@ class CargaMasivaService {
                     estado: "completado",
                     documento_id: resultado.documentoId,
                     fecha_procesado: new Date(),
-                    error: `Warning: ${error.message} (pero documento creado)`
+                    error: `Warning: ${error.message} (pero documento creado)`,
                   });
                 }
               }
@@ -867,7 +970,7 @@ class CargaMasivaService {
         allowSinNomenclatura: opciones?.allowSinNomenclatura || false,
         municipioFallbackNum: opciones?.municipioFallbackNum,
         modalidadFallbackNum: opciones?.modalidadFallbackNum,
-        tipoFallbackAbrev: opciones?.tipoFallbackAbrev
+        tipoFallbackAbrev: opciones?.tipoFallbackAbrev,
       });
 
       if (archivos.length === 0) {
@@ -880,11 +983,14 @@ class CargaMasivaService {
 
       for (const archivo of archivos) {
         try {
-
-          const datosArchivo = await this.obtenerDatosArchivo(archivo.nombre, {
-            allowSinNomenclatura: false, // Para ZIP normal asumimos modo estricto
-            // Si más adelante quieres ZIP sin nomenclatura, pasa la opción desde el controller
-          }, asuncIndex++);
+          const datosArchivo = await this.obtenerDatosArchivo(
+            archivo.nombre,
+            {
+              allowSinNomenclatura: false, // Para ZIP normal asumimos modo estricto
+              // Si más adelante quieres ZIP sin nomenclatura, pasa la opción desde el controller
+            },
+            asuncIndex++,
+          );
           // Buscar o crear autorización (sin transacción larga)
           const autorizacionInfo = await this.buscarOCrearAutorizacionRapido(
             datosArchivo,
@@ -1170,13 +1276,13 @@ class CargaMasivaService {
   }
 
   /**
-  * Finalizar proceso OCR exitoso
-  * @param {Object} proceso - Registro del proceso OCR en BD
-  * @param {Object} estado - Respuesta del estado desde Python
-  * @param {Object} autorizacionInfo - Info de autorización, municipio, etc.
-  * @param {number} userId - ID del usuario
-  * @param {Object} archivoData - Datos del archivo original
-  */
+   * Finalizar proceso OCR exitoso
+   * @param {Object} proceso - Registro del proceso OCR en BD
+   * @param {Object} estado - Respuesta del estado desde Python
+   * @param {Object} autorizacionInfo - Info de autorización, municipio, etc.
+   * @param {number} userId - ID del usuario
+   * @param {Object} archivoData - Datos del archivo original
+   */
   async finalizarProcesoOCRExitoso(
     proceso,
     estado,
@@ -1185,7 +1291,10 @@ class CargaMasivaService {
     archivoData,
   ) {
     try {
-      console.log("[OCR_FINALIZAR] Estado recibido desde Python:", JSON.stringify(estado, null, 2));
+      console.log(
+        "[OCR_FINALIZAR] Estado recibido desde Python:",
+        JSON.stringify(estado, null, 2),
+      );
 
       const pythonPdfId = estado?.pythonPdfId;
       if (!pythonPdfId) {
@@ -1200,8 +1309,13 @@ class CargaMasivaService {
 
       // Manejo de errores de descarga
       if (pdfResult.error || textResult.error) {
-        const errMsg = pdfResult.error || textResult.error || "Error desconocido al descargar";
-        console.warn(`[OCR_DOWNLOAD_ERROR] ${errMsg} para ${proceso.nombre_archivo || proceso.nombreArchivo}`);
+        const errMsg =
+          pdfResult.error ||
+          textResult.error ||
+          "Error desconocido al descargar";
+        console.warn(
+          `[OCR_DOWNLOAD_ERROR] ${errMsg} para ${proceso.nombre_archivo || proceso.nombreArchivo}`,
+        );
 
         if (
           errMsg.includes("404") ||
@@ -1209,7 +1323,9 @@ class CargaMasivaService {
           errMsg.includes("202") ||
           errMsg.includes("pending")
         ) {
-          console.log(`[REINTENTAR] Recursos aún no listos → ${proceso.nombre_archivo || '[sin nombre]'}`);
+          console.log(
+            `[REINTENTAR] Recursos aún no listos → ${proceso.nombre_archivo || "[sin nombre]"}`,
+          );
           return { success: false, retry: true };
         }
 
@@ -1223,7 +1339,7 @@ class CargaMasivaService {
         textResult.text.status === "pending"
       ) {
         console.log(
-          `[OCR_AUN_PENDIENTE] Progreso: ${textResult.text.progress || 0}% → ${proceso.nombre_archivo || '[sin nombre]'}`
+          `[OCR_AUN_PENDIENTE] Progreso: ${textResult.text.progress || 0}% → ${proceso.nombre_archivo || "[sin nombre]"}`,
         );
         return { success: false, retry: true };
       }
@@ -1231,8 +1347,13 @@ class CargaMasivaService {
       const transaction = await this.documentoModel.sequelize.transaction();
 
       try {
-        const esSinNomenclatura = archivoData.esSinNomenclatura || proceso.metadata?.datosArchivo?.esSinNomenclatura;
-        const nombreOriginal = archivoData.nombreOriginal || proceso.metadata?.datosArchivo?.nombreOriginal || archivoData.nombre;
+        const esSinNomenclatura =
+          archivoData.esSinNomenclatura ||
+          proceso.metadata?.datosArchivo?.esSinNomenclatura;
+        const nombreOriginal =
+          archivoData.nombreOriginal ||
+          proceso.metadata?.datosArchivo?.nombreOriginal ||
+          archivoData.nombre;
 
         let whereClause = {
           autorizacionId: autorizacionInfo.autorizacion.id,
@@ -1241,7 +1362,7 @@ class CargaMasivaService {
 
         if (esSinNomenclatura && nombreOriginal) {
           whereClause.descripcion = {
-            [Op.like]: `%${nombreOriginal}%`
+            [Op.like]: `%${nombreOriginal}%`,
           };
         }
 
@@ -1277,21 +1398,33 @@ class CargaMasivaService {
         // ────────────────────────────────────────────────
         // ¡ESTO ES LO QUE FALTABA! Notificar el nombre FINAL
         // ────────────────────────────────────────────────
-        const pdfIdFinal = nombreArchivo.replace(/\.pdf$/i, '');
+        const pdfIdFinal = nombreArchivo.replace(/\.pdf$/i, "");
 
         console.log(
-          `[NOTIFICAR_PYTHON_FINAL] pdf_id versionado: ${pdfIdFinal} → ${rutaArchivo}`
+          `[NOTIFICAR_PYTHON_FINAL] pdf_id versionado: ${pdfIdFinal} → ${rutaArchivo}`,
         );
 
-        await OCRProcessorService.actualizarRutaFinal(pythonPdfId, rutaArchivo).catch(err => {
+        await OCRProcessorService.actualizarRutaFinal(
+          pythonPdfId,
+          rutaArchivo,
+        ).catch((err) => {
           console.warn(`[WARN_COMPAT] ${pythonPdfId}:`, err);
         });
 
-        const checksumMd5 = crypto.createHash("md5").update(pdfResult.pdfBuffer).digest("hex");
-        const checksumSha256 = crypto.createHash("sha256").update(pdfResult.pdfBuffer).digest("hex");
+        const checksumMd5 = crypto
+          .createHash("md5")
+          .update(pdfResult.pdfBuffer)
+          .digest("hex");
+        const checksumSha256 = crypto
+          .createHash("sha256")
+          .update(pdfResult.pdfBuffer)
+          .digest("hex");
 
         if (documentoExistente) {
-          await documentoExistente.update({ version_actual: false }, { transaction });
+          await documentoExistente.update(
+            { version_actual: false },
+            { transaction },
+          );
         }
 
         const nuevoDocumento = await this.documentoModel.create(
@@ -1308,14 +1441,17 @@ class CargaMasivaService {
             paginas: this.estimarPaginas(pdfResult.pdfBuffer),
             creadoPor: userId,
           },
-          { transaction }
+          { transaction },
         );
 
         await this.archivoDigitalModel.create(
           {
             documento_id: nuevoDocumento.id,
             nombre_archivo: nombreArchivo,
-            ruta_almacenamiento: path.join(estructura.rutaRelativa, nombreArchivo),
+            ruta_almacenamiento: path.join(
+              estructura.rutaRelativa,
+              nombreArchivo,
+            ),
             mime_type: "application/pdf",
             tamano_bytes: pdfResult.pdfBuffer.length,
             checksum_md5: checksumMd5,
@@ -1327,7 +1463,7 @@ class CargaMasivaService {
             version_archivo: version,
             total_paginas: this.estimarPaginas(pdfResult.pdfBuffer),
           },
-          { transaction }
+          { transaction },
         );
 
         await proceso.update(
@@ -1339,16 +1475,22 @@ class CargaMasivaService {
               ...proceso.metadata,
               documentoId: nuevoDocumento.id,
               rutaArchivo,
-              pdfIdFinal,  // ← guardamos para referencia futura
+              pdfIdFinal, // ← guardamos para referencia futura
             },
           },
-          { transaction }
+          { transaction },
         );
 
         await transaction.commit();
 
-        const nombreLog = proceso.nombre_archivo || proceso.nombreArchivo || proceso.archivo_id || "[sin-nombre]";
-        console.log(`[OCR_COMPLETADO] Éxito → ${nombreLog} → Doc ID: ${nuevoDocumento.id} → Archivo: ${nombreArchivo}`);
+        const nombreLog =
+          proceso.nombre_archivo ||
+          proceso.nombreArchivo ||
+          proceso.archivo_id ||
+          "[sin-nombre]";
+        console.log(
+          `[OCR_COMPLETADO] Éxito → ${nombreLog} → Doc ID: ${nuevoDocumento.id} → Archivo: ${nombreArchivo}`,
+        );
 
         return { success: true, documentoId: nuevoDocumento.id };
       } catch (error) {
@@ -1357,13 +1499,23 @@ class CargaMasivaService {
         throw error;
       }
     } catch (error) {
-      console.error(`[OCR_FINALIZAR_ERROR] Fallo general en ${proceso.nombre_archivo || '[sin nombre]'}:`, error);
+      console.error(
+        `[OCR_FINALIZAR_ERROR] Fallo general en ${proceso.nombre_archivo || "[sin nombre]"}:`,
+        error,
+      );
 
-      await proceso.update({
-        estado: proceso.intentos >= (proceso.maxIntentos || 3) ? "fallado" : "pendiente",
-        error: error.message,
-        intentos: (proceso.intentos || 0) + 1,
-      }).catch(e => console.error("[UPDATE_FAIL] No se pudo actualizar proceso:", e));
+      await proceso
+        .update({
+          estado:
+            proceso.intentos >= (proceso.maxIntentos || 3)
+              ? "fallado"
+              : "pendiente",
+          error: error.message,
+          intentos: (proceso.intentos || 0) + 1,
+        })
+        .catch((e) =>
+          console.error("[UPDATE_FAIL] No se pudo actualizar proceso:", e),
+        );
 
       throw error;
     }
@@ -1546,9 +1698,9 @@ class CargaMasivaService {
       const progresoPromedio =
         totalConocidosParaProgreso > 0
           ? Math.round(
-            (numCompleted * 100 + sumProgressEnCurso) /
-            (numCompleted + todosProcesos.length),
-          )
+              (numCompleted * 100 + sumProgressEnCurso) /
+                (numCompleted + todosProcesos.length),
+            )
           : 0;
 
       const paginasTotales = todosProcesos.reduce(
@@ -1670,12 +1822,16 @@ class CargaMasivaService {
         let autorizacionInfo = null;
 
         try {
-          const datosArchivo = await this.obtenerDatosArchivo(archivo.originalname, {
-            allowSinNomenclatura: true,  // porque este método se llama SOLO desde el flujo sin-nomenclatura
-            municipioFallbackNum: 85,
-            modalidadFallbackNum: 52,
-            tipoFallbackAbrev: 'P'
-          }, directoIndex++);
+          const datosArchivo = await this.obtenerDatosArchivo(
+            archivo.originalname,
+            {
+              allowSinNomenclatura: true, // porque este método se llama SOLO desde el flujo sin-nomenclatura
+              municipioFallbackNum: 85,
+              modalidadFallbackNum: 52,
+              tipoFallbackAbrev: "P",
+            },
+            directoIndex++,
+          );
           autorizacionInfo = await this.buscarOCrearAutorizacionRapido(
             datosArchivo,
             userId,
@@ -1857,15 +2013,15 @@ class CargaMasivaService {
     };
   }
   /**
- * Obtiene datos de autorización: intenta parsear el nombre,
- * si falla y allowSinNomenclatura=true → usa fallback
- */
+   * Obtiene datos de autorización: intenta parsear el nombre,
+   * si falla y allowSinNomenclatura=true → usa fallback
+   */
   async obtenerDatosArchivo(nombreArchivo, opciones = {}, index = 0) {
     const {
       allowSinNomenclatura = false,
       municipioFallbackNum = 85,
       modalidadFallbackNum = 52,
-      tipoFallbackAbrev = 'P',
+      tipoFallbackAbrev = "P",
     } = opciones;
 
     try {
@@ -1880,12 +2036,18 @@ class CargaMasivaService {
       }
 
       // Modo sin nomenclatura → fallback buscando el consecutivo más alto tipo P-1, P-2
-      const municipioInfo = await this.municipioModel.findOne({ where: { num: municipioFallbackNum } });
-      const modalidadInfo = await this.modalidadModel.findOne({ where: { num: modalidadFallbackNum } });
-      const tipoInfo = await this.tiposAutorizacionModel.findOne({ where: { abreviatura: tipoFallbackAbrev } });
+      const municipioInfo = await this.municipioModel.findOne({
+        where: { num: municipioFallbackNum },
+      });
+      const modalidadInfo = await this.modalidadModel.findOne({
+        where: { num: modalidadFallbackNum },
+      });
+      const tipoInfo = await this.tiposAutorizacionModel.findOne({
+        where: { abreviatura: tipoFallbackAbrev },
+      });
 
       let nextNumber = 1;
-      
+
       if (municipioInfo && modalidadInfo && tipoInfo) {
         // Buscar las autorizaciones de este tipo para obtener el máximo consecutivo1
         const maxAuth = await this.autorizacionModel.findOne({
@@ -1894,7 +2056,7 @@ class CargaMasivaService {
             modalidadId: modalidadInfo.id,
             tipoId: tipoInfo.id,
           },
-          order: [['consecutivo1', 'DESC']],
+          order: [["consecutivo1", "DESC"]],
         });
 
         if (maxAuth && maxAuth.consecutivo1) {
@@ -1906,10 +2068,12 @@ class CargaMasivaService {
       }
 
       nextNumber += index; // Evitar colisiones en procesamientos masivos por lotes
-      const nextNumString = nextNumber.toString().padStart(2, '0');
+      const nextNumString = nextNumber.toString().padStart(2, "0");
 
       const seqLabel = nextNumber.toString();
-      console.warn(`[SIN NOMENCLATURA] Nombre inválido (${nombreArchivo}) → usando fallback P-${seqLabel}`);
+      console.warn(
+        `[SIN NOMENCLATURA] Nombre inválido (${nombreArchivo}) → usando fallback P-${seqLabel}`,
+      );
 
       return {
         numeroAutorizacion: `P-${seqLabel}`,
@@ -1917,7 +2081,7 @@ class CargaMasivaService {
         modalidadNum: modalidadFallbackNum,
         tipoAbrev: tipoFallbackAbrev,
         consecutivo1: nextNumString,
-        consecutivo2: '000',
+        consecutivo2: "000",
         nombreOriginal: nombreArchivo,
         esSinNomenclatura: true,
       };
