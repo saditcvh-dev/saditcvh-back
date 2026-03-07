@@ -62,6 +62,25 @@ const verifyDocumentMunicipality = async (req, res, next) => {
         documento.autorizacion.municipioId ||
         documento.autorizacion.municipio_id;
     }
+    // Caso 3: La ruta de creación recibe el autorizacionId en el body
+    else if (
+      req.body &&
+      (req.body.autorizacionId || req.body.autorizacion_id)
+    ) {
+      const authIdToSearch =
+        req.body.autorizacionId || req.body.autorizacion_id;
+      const autorizacion = await Autorizacion.findByPk(authIdToSearch, {
+        attributes: ["municipioId"],
+      });
+
+      if (!autorizacion) {
+        return res.status(404).json({
+          success: false,
+          message: "Autorización provista no encontrada.",
+        });
+      }
+      municipioId = autorizacion.municipioId || autorizacion.municipio_id;
+    }
 
     // Si logramos encontrar el municipio al que pertenece el documento/archivo, lo inyectamos
     if (municipioId) {
