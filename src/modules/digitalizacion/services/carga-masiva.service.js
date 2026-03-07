@@ -1906,6 +1906,8 @@ class CargaMasivaService {
       }
 
       nextNumber += index; // Evitar colisiones en procesamientos masivos por lotes
+      const nextNumString = nextNumber.toString().padStart(2, '0');
+
       const seqLabel = nextNumber.toString();
       console.warn(`[SIN NOMENCLATURA] Nombre inválido (${nombreArchivo}) → usando fallback P-${seqLabel}`);
 
@@ -1914,8 +1916,8 @@ class CargaMasivaService {
         municipioNum: municipioFallbackNum,
         modalidadNum: modalidadFallbackNum,
         tipoAbrev: tipoFallbackAbrev,
-        consecutivo1: nextNumber,
-        consecutivo2: 0,
+        consecutivo1: nextNumString,
+        consecutivo2: '000',
         nombreOriginal: nombreArchivo,
         esSinNomenclatura: true,
       };
