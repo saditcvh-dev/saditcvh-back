@@ -4,11 +4,10 @@
  */
 const verifyDocumentMunicipality = async (req, res, next) => {
   try {
-    const {
-      Documento,
-      ArchivoDigital,
-      Autorizacion,
-    } = require("../../../database/associations");
+    const db = require("../../../database/associations");
+    const Documento = db.Documento;
+    const ArchivoDigital = db.ArchivoDigital;
+    const Autorizacion = db.Autorizacion;
 
     let municipioId = null;
 
