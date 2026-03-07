@@ -29,7 +29,13 @@ router.get("/:id", documentoController.getById);
 // =====================
 // Creación
 // =====================
-router.post("/", upload.single("archivo"), documentoController.crear);
+router.post(
+  "/",
+  upload.single("archivo"),
+  verifyDocumentMunicipality,
+  checkPermission("subir"),
+  documentoController.crear,
+);
 router.post(
   "/:id/version",
   upload.single("archivo"),
