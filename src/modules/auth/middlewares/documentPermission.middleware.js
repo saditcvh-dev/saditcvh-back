@@ -1,15 +1,15 @@
-const {
-  Documento,
-  ArchivoDigital,
-  Autorizacion,
-} = require("../../../database/associations");
-
 /**
  * Middleware que intercepta peticiones sobre documentos o archivos
  * y determina el municipioId al que pertenecen para inyectarlo en req.municipioId
  */
 const verifyDocumentMunicipality = async (req, res, next) => {
   try {
+    const {
+      Documento,
+      ArchivoDigital,
+      Autorizacion,
+    } = require("../../../database/associations");
+
     let municipioId = null;
 
     // Caso 1: La ruta recibe un ID de archivo digital (por ejemplo: /archivo/:archivoId/descargar)
