@@ -852,7 +852,7 @@ class CargaMasivaService {
                 lote_id: loteId || `lote_sync_${Date.now()}_${userId}`,
                 archivo_id: `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 nombre_archivo: archivo.nombre,
-                autorizacion_id: null, // Se asigna luego si es válido
+                autorizacion_id: 0, // Se asigna luego si es válido
                 user_id: userId,
                 estado: "procesando",
                 tipo_proceso: "NORMAL",
@@ -934,7 +934,7 @@ class CargaMasivaService {
                   lote_id: loteId || `lote_sync_${Date.now()}_${userId}`,
                   archivo_id: `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                   nombre_archivo: archivo.nombre,
-                  autorizacion_id: null,
+                  autorizacion_id: 0,
                   user_id: userId,
                   estado: "fallado",
                   error: error.message,
@@ -1003,7 +1003,7 @@ class CargaMasivaService {
             lote_id: loteId,
             archivo_id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             nombre_archivo: archivo.nombre || archivo.originalname,
-            autorizacion_id: null,
+            autorizacion_id: 0,
             user_id: userId,
             estado: "pendiente",
             metadata: {
@@ -1066,7 +1066,7 @@ class CargaMasivaService {
                lote_id: loteId,
                archivo_id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                nombre_archivo: archivo.nombre || archivo.originalname,
-               autorizacion_id: null,
+               autorizacion_id: 0,
                user_id: userId,
                estado: "fallado",
                error: error.message,
