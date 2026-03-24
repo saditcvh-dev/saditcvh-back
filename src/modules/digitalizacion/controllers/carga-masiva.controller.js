@@ -327,7 +327,7 @@ class CargaMasivaController {
       const userId = req.user.id;
       const { limit = 20, offset = 0 } = req.query;
 
-      const lotes = await CargaMasivaService.listarLotesPorUsuario(
+      const result = await CargaMasivaService.listarLotesPorUsuario(
         userId,
         parseInt(limit),
         parseInt(offset),
@@ -335,7 +335,9 @@ class CargaMasivaController {
 
       res.json({
         success: true,
-        lotes,
+        lotes: result.lotes,
+        total: result.total,
+        totalPages: result.totalPages
       });
     } catch (error) {
       res.status(500).json({
