@@ -323,14 +323,26 @@ class DocumentoService {
     }
   }
 
-  async obtenerDocumentosPorAutorizacion(autorizacionId, userId) {
+  async obtenerDocumentosPorAutorizacion(autorizacionId, userId, opciones = {}) {
     try {
+      const { page = 1, limit = 10 } = opciones;
+      const offset = (page - 1) * limit;
+
+      const whereClause = {
+        autorizacionId,
+        documento_padre_id: null, // Solo traer documentos raíz
+      };
+
+      const totalItems = await Documento.count({
+        where: whereClause,
+        paranoid: false
+      });
+
       const documentosModels = await Documento.findAll({
-        where: {
-          autorizacionId,
-          documento_padre_id: null, // Solo traer documentos raíz
-        },
+        where: whereClause,
         paranoid: false,
+        limit: parseInt(limit),
+        offset: offset,
         include: [
           {
             model: ArchivoDigital,
@@ -513,7 +525,13 @@ class DocumentoService {
         }
       }
 
-      return documentos;
+      return {
+        documentos,
+        currentPage: page,
+        totalPages: Math.ceil(totalItems / limit),
+        totalItems,
+        itemsPerPage: limit
+      };
     } catch (error) {
       throw new Error(`Error al obtener documentos: ${error.message}`);
     }
