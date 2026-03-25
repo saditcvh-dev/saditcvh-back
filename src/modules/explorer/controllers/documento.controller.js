@@ -82,18 +82,25 @@ class DocumentoController {
   async getByAutorizacion(req, res) {
     try {
       const { autorizacionId } = req.params;
-      const userId = req.user.id; // Obtener el ID del usuario autenticado
+      const userId = req.user.id;
+      const { page = 1, limit = 10 } = req.query;
 
-      const documentos =
-        await documentoService.obtenerDocumentosPorAutorizacion(
-          autorizacionId,
-          userId,
-        );
+      const result = await documentoService.obtenerDocumentosPorAutorizacion(
+        autorizacionId,
+        userId,
+        { page: parseInt(page), limit: parseInt(limit) }
+      );
 
       res.status(200).json({
         success: true,
         message: "Documentos obtenidos correctamente",
-        data: documentos,
+        data: result.documentos,
+        pagination: {
+          currentPage: result.currentPage,
+          totalPages: result.totalPages,
+          totalItems: result.totalItems,
+          itemsPerPage: result.itemsPerPage
+        }
       });
     } catch (error) {
       res.status(400).json({
