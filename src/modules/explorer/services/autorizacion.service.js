@@ -141,7 +141,8 @@ crearAutorizacion = async (autorizacionData) => {
 			const offset = (page - 1) * limit;
 
 			const normalizarNombreCarpeta = (texto) => {
-				return texto.replace(/[-\s]/g, '_').replace(/_/g, '\\_');
+				// Reemplaza guiones y espacios con un comodín '_' para la consulta LIKE de PostgreSQL
+				return texto.replace(/[-\s]/g, '_');
 			};
 
 			const searchCondition = exactMatch ? search : {
