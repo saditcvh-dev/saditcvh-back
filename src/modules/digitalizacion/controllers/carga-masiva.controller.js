@@ -567,6 +567,83 @@ class CargaMasivaController {
       return res.status(500).json({ success: false, message: error.message });
     }
   }
+
+  // ============== Procesamiento por Municipio ==============
+  async obtenerMunicipioProcesando(req, res) {
+    try {
+      const lock = await CargaMasivaService.obtenerMunicipioProcesando();
+      return res.json({ success: true, lock });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  async obtenerPendientesMunicipio(req, res) {
+    try {
+      const { municipioNum } = req.params;
+      const count = await CargaMasivaService.obtenerArchivosPendientesPorMunicipioCount(parseInt(municipioNum, 10));
+      return res.json({ success: true, count });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  async procesarMunicipio(req, res) {
+    try {
+      const { municipioNum } = req.body;
+      const userId = req.user.id;
+
+      if (userId !== 1) {
+        return res.status(403).json({
+          success: false,
+          message: "Acceso denegado: Solo el usuario con ID 1 puede ejecutar el procesamiento por municipio."
+        });
+      }
+
+      if (!municipioNum) {
+        return res.status(400).json({ success: false, message: "No se proporcionó el número de municipio." });
+      }
+
+      const result = await CargaMasivaService.procesarOcrMunicipio(parseInt(municipioNum, 10), userId);
+      return res.json({
+        success: true,
+        message: "Procesamiento de OCR iniciado para el municipio.",
+        total: result.total,
+        loteId: result.loteId
+      });
+    } catch (error) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  async obtenerFallidosMunicipio(req, res) {
+    try {
+      const { municipioNum } = req.params;
+      const fallidos = await CargaMasivaService.obtenerArchivosFallidosPorMunicipio(parseInt(municipioNum, 10));
+      return res.json({ success: true, fallidos });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  async reintentarArchivo(req, res) {
+    try {
+      const { archivoId } = req.params;
+      const userId = req.user.id;
+
+      if (userId !== 1) {
+        return res.status(403).json({
+          success: false,
+          message: "Acceso denegado: Solo el usuario con ID 1 puede reintentar archivos."
+        });
+      }
+
+      await CargaMasivaService.reintentarArchivoIndividual(parseInt(archivoId, 10), userId);
+      return res.json({ success: true, message: "Archivo encolado para reintento de OCR." });
+    } catch (error) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+  }
 }
 
 module.exports = new CargaMasivaController();

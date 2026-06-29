@@ -2067,6 +2067,412 @@ class CargaMasivaService {
       };
     }
   }
+
+  // ============== Procesamiento por Municipio ==============
+  async obtenerMunicipioProcesando() {
+    if (!global.activeOcrLock) {
+      // Reconciliación: buscar si hay algún lote activo en BD
+      const activeDbProcess = await this.ocrProcesoModel.findOne({
+        where: { estado: ["pendiente", "procesando"] },
+        order: [["createdAt", "DESC"]],
+      });
+
+      if (activeDbProcess) {
+        const autorizacion = await this.autorizacionModel.findByPk(activeDbProcess.autorizacion_id);
+        if (autorizacion) {
+          const municipio = await this.municipioModel.findByPk(autorizacion.municipioId);
+          if (municipio) {
+            global.activeOcrLock = {
+              municipioNum: municipio.num,
+              municipioId: municipio.id,
+              municipioNombre: municipio.nombre,
+              loteId: activeDbProcess.lote_id,
+              total: 0,
+              completados: 0,
+              fallados: 0,
+              errores: [],
+              startedAt: activeDbProcess.createdAt,
+            };
+          }
+        }
+      }
+    }
+    return global.activeOcrLock || null;
+  }
+
+  async obtenerArchivosPendientesPorMunicipioCount(municipioNum) {
+    const municipio = await this.municipioModel.findOne({ where: { num: municipioNum } });
+    if (!municipio) return 0;
+
+    return await this.archivoDigitalModel.count({
+      where: {
+        estado_ocr: { [Op.in]: ["pendiente", "fallido"] },
+      },
+      include: [
+        {
+          model: this.documentoModel,
+          as: "documento",
+          required: true,
+          include: [
+            {
+              model: this.autorizacionModel,
+              as: "autorizacion",
+              where: { municipioId: municipio.id },
+              required: true,
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  async obtenerArchivosFallidosPorMunicipio(municipioNum) {
+    const municipio = await this.municipioModel.findOne({ where: { num: municipioNum } });
+    if (!municipio) return [];
+
+    const archivos = await this.archivoDigitalModel.findAll({
+      where: {
+        estado_ocr: "fallido",
+      },
+      include: [
+        {
+          model: this.documentoModel,
+          as: "documento",
+          required: true,
+          include: [
+            {
+              model: this.autorizacionModel,
+              as: "autorizacion",
+              where: { municipioId: municipio.id },
+              required: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    // Formatear la lista de fallidos con su error y fecha
+    return archivos.map((a) => {
+      const errorMsg = a.metadatos_tecnicos?.error || "Error de procesamiento OCR desconocido";
+      const failedAt = a.metadatos_tecnicos?.failedAt || new Date();
+      return {
+        id: a.id,
+        nombreArchivo: a.nombre_archivo,
+        error: errorMsg,
+        fecha: failedAt,
+      };
+    });
+  }
+
+  async procesarOcrMunicipio(municipioNum, userId) {
+    const municipio = await this.municipioModel.findOne({ where: { num: municipioNum } });
+    if (!municipio) {
+      throw new Error(`Municipio con número ${municipioNum} no encontrado.`);
+    }
+
+    const currentLock = await this.obtenerMunicipioProcesando();
+    if (currentLock) {
+      throw new Error(`Ya hay un municipio procesándose actualmente (${currentLock.municipioNombre || currentLock.municipioNum}).`);
+    }
+
+    const pendingFiles = await this.archivoDigitalModel.findAll({
+      where: {
+        estado_ocr: { [Op.in]: ["pendiente", "fallido"] },
+      },
+      include: [
+        {
+          model: this.documentoModel,
+          as: "documento",
+          required: true,
+          include: [
+            {
+              model: this.autorizacionModel,
+              as: "autorizacion",
+              where: { municipioId: municipio.id },
+              required: true,
+              include: [
+                { model: this.municipioModel, as: "municipio" },
+                { model: this.modalidadModel, as: "modalidad" },
+                { model: this.tiposAutorizacionModel, as: "tipoAutorizacion" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (pendingFiles.length === 0) {
+      throw new Error("No hay archivos en cola ('pendiente' o 'fallido') para este municipio.");
+    }
+
+    const loteId = `lote_muni_${municipioNum}_${Date.now()}`;
+    global.activeOcrLock = {
+      municipioNum,
+      municipioId: municipio.id,
+      municipioNombre: municipio.nombre,
+      loteId,
+      total: pendingFiles.length,
+      completados: 0,
+      fallados: 0,
+      errores: [],
+      startedAt: new Date(),
+    };
+
+    // Iniciar procesamiento en segundo plano
+    this.ejecutarProcesamientoOcrMunicipioBackground(pendingFiles, loteId, userId).catch((err) => {
+      console.error("Error en procesamiento de municipio en background:", err);
+    });
+
+    return { total: pendingFiles.length, loteId };
+  }
+
+  async ejecutarProcesamientoOcrMunicipioBackground(pendingFiles, loteId, userId) {
+    const basePath = process.env.FILE_STORAGE_PATH || "./storage";
+    const chunkSize = 4; // Procesar de 4 en 4 para estabilidad del servidor
+
+    try {
+      for (let i = 0; i < pendingFiles.length; i += chunkSize) {
+        const chunk = pendingFiles.slice(i, i + chunkSize);
+        const chunkProcesos = [];
+
+        for (const file of chunk) {
+          try {
+            const absolutePath = path.join(basePath, file.ruta_almacenamiento);
+            const fileBuffer = await fs.readFile(absolutePath);
+
+            const autorizacion = file.documento.autorizacion;
+            const autorizacionInfo = {
+              autorizacion,
+              municipio: autorizacion.municipio,
+              modalidad: autorizacion.modalidad,
+              tipoAutorizacion: autorizacion.tipoAutorizacion,
+            };
+
+            const parsedName = this.parsearNombreArchivoSafe(file.nombre_archivo);
+
+            const proceso = await this.ocrProcesoModel.create({
+              lote_id: loteId,
+              archivo_id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              nombre_archivo: file.nombre_archivo,
+              autorizacion_id: autorizacion.id,
+              user_id: userId,
+              estado: "pendiente",
+              metadata: {
+                datosArchivo: {
+                  ...parsedName,
+                  esSinNomenclatura: !parsedName.success,
+                  nombreOriginal: file.nombre_archivo,
+                },
+                tamano: file.tamano_bytes,
+              },
+            });
+
+            // Marcar ArchivoDigital como procesando
+            await file.update({ estado_ocr: "procesando" });
+
+            chunkProcesos.push({
+              file,
+              proceso,
+              autorizacionInfo,
+              buffer: fileBuffer,
+            });
+
+            // Iniciar envío a Python
+            await this.enviarArchivoParaOCR(
+              {
+                buffer: fileBuffer,
+                nombre: file.nombre_archivo,
+                tamano: file.tamano_bytes,
+                esSinNomenclatura: !parsedName.success,
+                nombreOriginal: file.nombre_archivo,
+              },
+              proceso,
+              autorizacionInfo,
+              userId,
+            );
+          } catch (fileErr) {
+            console.error(`Error preparando archivo individual ${file.nombre_archivo}:`, fileErr);
+            // Marcar archivo como fallido directamente si no se pudo leer o enviar
+            await file.update({
+              estado_ocr: "fallido",
+              metadatos_tecnicos: {
+                ...file.metadatos_tecnicos,
+                error: fileErr.message,
+                failedAt: new Date(),
+              },
+            });
+
+            if (global.activeOcrLock) {
+              global.activeOcrLock.fallados++;
+              global.activeOcrLock.errores.push({
+                archivo: file.nombre_archivo,
+                error: fileErr.message,
+              });
+            }
+          }
+        }
+
+        // Esperar a que el sub-lote actual termine (completed o failed)
+        if (chunkProcesos.length > 0) {
+          await this.esperarSubLoteOCR(chunkProcesos.map((cp) => cp.proceso));
+        }
+
+        // Actualizar estadísticas del lock
+        if (global.activeOcrLock) {
+          for (const cp of chunkProcesos) {
+            const dbProceso = await this.ocrProcesoModel.findByPk(cp.proceso.id);
+            if (dbProceso) {
+              if (dbProceso.estado === "completado") {
+                global.activeOcrLock.completados++;
+              } else if (dbProceso.estado === "fallado") {
+                global.activeOcrLock.fallados++;
+                global.activeOcrLock.errores.push({
+                  archivo: cp.file.nombre_archivo,
+                  error: dbProceso.error || "Fallo en procesamiento de OCR de Python",
+                });
+                
+                // Actualizar metadatos técnicos en ArchivoDigital
+                await cp.file.update({
+                  estado_ocr: "fallido",
+                  metadatos_tecnicos: {
+                    ...cp.file.metadatos_tecnicos,
+                    error: dbProceso.error || "Fallo en procesamiento de OCR de Python",
+                    failedAt: new Date(),
+                  },
+                });
+              }
+            }
+          }
+        }
+      }
+    } finally {
+      // Liberar el bloqueo al completar
+      global.activeOcrLock = null;
+    }
+  }
+
+  async esperarSubLoteOCR(procesos) {
+    return new Promise((resolve) => {
+      const checkInterval = setInterval(async () => {
+        try {
+          const dbProcesos = await this.ocrProcesoModel.findAll({
+            where: {
+              id: { [Op.in]: procesos.map((p) => p.id) },
+            },
+          });
+
+          const todosListos = dbProcesos.every((p) => ["completado", "fallado"].includes(p.estado));
+          if (todosListos) {
+            clearInterval(checkInterval);
+            resolve(dbProcesos);
+          }
+        } catch (err) {
+          console.error("Error en polling de sub-lote OCR:", err);
+        }
+      }, 5000);
+    });
+  }
+
+  async reintentarArchivoIndividual(archivoId, userId) {
+    const file = await this.archivoDigitalModel.findByPk(archivoId, {
+      include: [
+        {
+          model: this.documentoModel,
+          as: "documento",
+          required: true,
+          include: [
+            {
+              model: this.autorizacionModel,
+              as: "autorizacion",
+              required: true,
+              include: [
+                { model: this.municipioModel, as: "municipio" },
+                { model: this.modalidadModel, as: "modalidad" },
+                { model: this.tiposAutorizacionModel, as: "tipoAutorizacion" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (!file) {
+      throw new Error(`Archivo digital con ID ${archivoId} no encontrado.`);
+    }
+
+    const currentLock = await this.obtenerMunicipioProcesando();
+    if (currentLock) {
+      throw new Error(`No se puede reintentar en este momento. Se está procesando el municipio: ${currentLock.municipioNombre || currentLock.municipioNum}.`);
+    }
+
+    const basePath = process.env.FILE_STORAGE_PATH || "./storage";
+    const absolutePath = path.join(basePath, file.ruta_almacenamiento);
+    const fileBuffer = await fs.readFile(absolutePath);
+
+    const autorizacion = file.documento.autorizacion;
+    const autorizacionInfo = {
+      autorizacion,
+      municipio: autorizacion.municipio,
+      modalidad: autorizacion.modalidad,
+      tipoAutorizacion: autorizacion.tipoAutorizacion,
+    };
+
+    const parsedName = this.parsearNombreArchivoSafe(file.nombre_archivo);
+
+    const loteId = `lote_retry_${archivoId}_${Date.now()}`;
+    const proceso = await this.ocrProcesoModel.create({
+      lote_id: loteId,
+      archivo_id: `temp_${Date.now()}`,
+      nombre_archivo: file.nombre_archivo,
+      autorizacion_id: autorizacion.id,
+      user_id: userId,
+      estado: "pendiente",
+      metadata: {
+        datosArchivo: {
+          ...parsedName,
+          esSinNomenclatura: !parsedName.success,
+          nombreOriginal: file.nombre_archivo,
+        },
+        tamano: file.tamano_bytes,
+      },
+    });
+
+    await file.update({ estado_ocr: "procesando" });
+
+    await this.enviarArchivoParaOCR(
+      {
+        buffer: fileBuffer,
+        nombre: file.nombre_archivo,
+        tamano: file.tamano_bytes,
+        esSinNomenclatura: !parsedName.success,
+        nombreOriginal: file.nombre_archivo,
+      },
+      proceso,
+      autorizacionInfo,
+      userId,
+    );
+
+    // Ejecutar monitoreo del reintento en background y actualizar ArchivoDigital cuando acabe
+    this.esperarSubLoteOCR([proceso]).then(async () => {
+      const dbProceso = await this.ocrProcesoModel.findByPk(proceso.id);
+      if (dbProceso) {
+        if (dbProceso.estado === "completado") {
+          await file.update({ estado_ocr: "completado" });
+        } else {
+          await file.update({
+            estado_ocr: "fallido",
+            metadatos_tecnicos: {
+              ...file.metadatos_tecnicos,
+              error: dbProceso.error || "Fallo en procesamiento de OCR de Python",
+              failedAt: new Date(),
+            },
+          });
+        }
+      }
+    }).catch(console.error);
+
+    return { success: true };
+  }
 }
 
 module.exports = new CargaMasivaService();

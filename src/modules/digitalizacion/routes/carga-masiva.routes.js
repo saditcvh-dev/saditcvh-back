@@ -66,6 +66,13 @@ router.get('/lotes', CargaMasivaController.listarLotesUsuario);
 // (compat)
 router.get('/estado/:procesoId', CargaMasivaController.obtenerEstadoProcesamiento);
 
+// ============== Procesamiento por Municipio ==============
+router.get('/municipio-procesando', CargaMasivaController.obtenerMunicipioProcesando);
+router.get('/pendientes-municipio/:municipioNum', CargaMasivaController.obtenerPendientesMunicipio);
+router.post('/procesar-municipio', CargaMasivaController.procesarMunicipio);
+router.get('/fallidos-municipio/:municipioNum', CargaMasivaController.obtenerFallidosMunicipio);
+router.post('/reintentar-archivo/:archivoId', CargaMasivaController.reintentarArchivo);
+
 // ============== SP-N (sin nomenclatura, OCR OFF) ==============
 router.post(
     '/comprimido-sin-nomenclatura',
