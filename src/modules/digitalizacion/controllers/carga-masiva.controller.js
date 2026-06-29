@@ -590,7 +590,7 @@ class CargaMasivaController {
 
   async procesarMunicipio(req, res) {
     try {
-      const { municipioNum } = req.body;
+      const { municipioNum, limite } = req.body;
       const userId = req.user.id;
 
       if (userId !== 1) {
@@ -604,7 +604,11 @@ class CargaMasivaController {
         return res.status(400).json({ success: false, message: "No se proporcionó el número de municipio." });
       }
 
-      const result = await CargaMasivaService.procesarOcrMunicipio(parseInt(municipioNum, 10), userId);
+      const result = await CargaMasivaService.procesarOcrMunicipio(
+        parseInt(municipioNum, 10),
+        userId,
+        limite ? parseInt(limite, 10) : null
+      );
       return res.json({
         success: true,
         message: "Procesamiento de OCR iniciado para el municipio.",

@@ -2164,7 +2164,7 @@ class CargaMasivaService {
     });
   }
 
-  async procesarOcrMunicipio(municipioNum, userId) {
+  async procesarOcrMunicipio(municipioNum, userId, limite = null) {
     const municipio = await this.municipioModel.findOne({ where: { num: municipioNum } });
     if (!municipio) {
       throw new Error(`Municipio con número ${municipioNum} no encontrado.`);
@@ -2179,6 +2179,7 @@ class CargaMasivaService {
       where: {
         estado_ocr: { [Op.in]: ["pendiente", "fallido"] },
       },
+      limit: limite ? parseInt(limite, 10) : undefined,
       include: [
         {
           model: this.documentoModel,
