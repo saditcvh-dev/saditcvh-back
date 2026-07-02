@@ -1318,6 +1318,52 @@ class CargaMasivaService {
       const transaction = await this.documentoModel.sequelize.transaction();
 
       try {
+        // [NUEVO] Lógica de actualización en el mismo lugar (updateInPlace) para evitar crear versiones _v2
+        const isUpdateInPlace = proceso.metadata?.updateInPlace;
+        if (isUpdateInPlace && proceso.metadata?.archivoDigitalId) {
+          const archivoExistente = await this.archivoDigitalModel.findByPk(proceso.metadata.archivoDigitalId, { transaction });
+          const documentoExistente = await this.documentoModel.findByPk(proceso.metadata.documentoId, { transaction });
+
+          if (archivoExistente && documentoExistente) {
+            const basePath = process.env.FILE_STORAGE_PATH || "./storage";
+            const rutaAbsoluta = path.join(basePath, archivoExistente.ruta_almacenamiento);
+            
+            console.log(`  [OCR_FINALIZAR] Sobreescribiendo archivo existente (updateInPlace): ${rutaAbsoluta}`);
+            await fs.writeFile(rutaAbsoluta, pdfResult.pdfBuffer);
+
+            const checksumMd5 = crypto.createHash("md5").update(pdfResult.pdfBuffer).digest("hex");
+            const checksumSha256 = crypto.createHash("sha256").update(pdfResult.pdfBuffer).digest("hex");
+
+            await archivoExistente.update({
+              tamano_bytes: pdfResult.pdfBuffer.length,
+              checksum_md5: checksumMd5,
+              checksum_sha256: checksumSha256,
+              estado_ocr: "completado",
+              texto_ocr: textResult.text,
+              total_paginas: this.estimarPaginas(pdfResult.pdfBuffer),
+            }, { transaction });
+
+            await proceso.update({
+              estado: "completado",
+              documento_id: documentoExistente.id,
+              fecha_procesado: new Date(),
+              metadata: {
+                ...proceso.metadata,
+                rutaArchivo: rutaAbsoluta,
+                pdfIdFinal: archivoExistente.nombre_archivo.replace(/\.pdf$/i, "")
+              }
+            }, { transaction });
+
+            await OCRProcessorService.actualizarRutaFinal(
+              pythonPdfId,
+              rutaAbsoluta
+            ).catch(err => console.warn(`[WARN_COMPAT] ${pythonPdfId}:`, err));
+
+            await transaction.commit();
+            return { success: true, documentoId: documentoExistente.id };
+          }
+        }
+
         const esSinNomenclatura =
           archivoData.esSinNomenclatura ||
           proceso.metadata?.datosArchivo?.esSinNomenclatura;
@@ -2181,11 +2227,10 @@ class CargaMasivaService {
       throw new Error(`Ya hay un municipio procesándose actualmente (${currentLock.municipioNombre || currentLock.municipioNum}).`);
     }
 
-    const pendingFiles = await this.archivoDigitalModel.findAll({
+    const pendingCount = await this.archivoDigitalModel.count({
       where: {
         estado_ocr: { [Op.in]: ["pendiente", "fallido"] },
       },
-      limit: limite ? parseInt(limite, 10) : undefined,
       include: [
         {
           model: this.documentoModel,
@@ -2197,18 +2242,15 @@ class CargaMasivaService {
               as: "autorizacion",
               where: { municipioId: municipio.id },
               required: true,
-              include: [
-                { model: this.municipioModel, as: "municipio" },
-                { model: this.modalidadModel, as: "modalidad" },
-                { model: this.tiposAutorizacionModel, as: "tipoAutorizacion" },
-              ],
             },
           ],
         },
       ],
     });
 
-    if (pendingFiles.length === 0) {
+    const totalToProcess = limite ? Math.min(parseInt(limite, 10), pendingCount) : pendingCount;
+
+    if (totalToProcess === 0) {
       throw new Error("No hay archivos en cola ('pendiente' o 'fallido') para este municipio.");
     }
 
@@ -2218,28 +2260,61 @@ class CargaMasivaService {
       municipioId: municipio.id,
       municipioNombre: municipio.nombre,
       loteId,
-      total: pendingFiles.length,
+      total: totalToProcess,
       completados: 0,
       fallados: 0,
       errores: [],
       startedAt: new Date(),
     };
 
-    // Iniciar procesamiento en segundo plano
-    this.ejecutarProcesamientoOcrMunicipioBackground(pendingFiles, loteId, userId).catch((err) => {
+    // Iniciar procesamiento en segundo plano pasándole el municipio completo
+    this.ejecutarProcesamientoOcrMunicipioBackground(municipio, loteId, userId, totalToProcess).catch((err) => {
       console.error("Error en procesamiento de municipio en background:", err);
     });
 
-    return { total: pendingFiles.length, loteId };
+    return { total: totalToProcess, loteId };
   }
 
-  async ejecutarProcesamientoOcrMunicipioBackground(pendingFiles, loteId, userId) {
+  async ejecutarProcesamientoOcrMunicipioBackground(municipio, loteId, userId, maxLimit) {
     const basePath = process.env.FILE_STORAGE_PATH || "./storage";
-    const chunkSize = 4; // Procesar de 4 en 4 para estabilidad del servidor
+    const chunkSize = 2; // Procesar de 2 en 2 para cuidar la memoria y el servidor OCR
 
     try {
-      for (let i = 0; i < pendingFiles.length; i += chunkSize) {
-        const chunk = pendingFiles.slice(i, i + chunkSize);
+      let procesados = 0;
+
+      while (procesados < maxLimit) {
+        const remaining = maxLimit - procesados;
+        const currentLimit = Math.min(chunkSize, remaining);
+
+        // Traer de BD el siguiente chunk de archivos pendientes para el municipio
+        const chunk = await this.archivoDigitalModel.findAll({
+          where: { estado_ocr: { [Op.in]: ["pendiente", "fallido"] } },
+          limit: currentLimit,
+          order: [['id', 'ASC']],
+          include: [
+            {
+              model: this.documentoModel,
+              as: "documento",
+              required: true,
+              include: [
+                {
+                  model: this.autorizacionModel,
+                  as: "autorizacion",
+                  where: { municipioId: municipio.id },
+                  required: true,
+                  include: [
+                    { model: this.municipioModel, as: "municipio" },
+                    { model: this.modalidadModel, as: "modalidad" },
+                    { model: this.tiposAutorizacionModel, as: "tipoAutorizacion" },
+                  ],
+                },
+              ],
+            },
+          ],
+        });
+
+        if (chunk.length === 0) break; // Ya no hay más
+
         const chunkProcesos = [];
 
         for (const file of chunk) {
@@ -2271,17 +2346,22 @@ class CargaMasivaService {
                   nombreOriginal: file.nombre_archivo,
                 },
                 tamano: file.tamano_bytes,
+                updateInPlace: true,
+                archivoDigitalId: file.id,
+                documentoId: file.documento_id,
               },
             });
 
-            // Marcar ArchivoDigital como procesando
+            // Marcar ArchivoDigital como procesando para evitar que lo tome la siguiente iteración
             await file.update({ estado_ocr: "procesando" });
 
             chunkProcesos.push({
               file,
               proceso,
-              autorizacionInfo,
-              buffer: fileBuffer,
+              autorizacionInfo
+              // NOTA IMPORTANTE DE OPTIMIZACIÓN DE MEMORIA:
+              // No guardamos el `buffer: fileBuffer` en memoria. Al enviarlo a Python enseguida,
+              // el Garbage Collector puede limpiar la memoria RAM de inmediato mientras esperamos.
             });
 
             // Iniciar envío a Python
@@ -2351,6 +2431,8 @@ class CargaMasivaService {
             }
           }
         }
+        
+        procesados += chunk.length;
       }
     } finally {
       // Liberar el bloqueo al completar
