@@ -1190,7 +1190,7 @@ class CargaMasivaService {
           return;
         }
 
-        if (estado.success && estado.status === "completed") {
+        if (estado.status === "completed") {
           clearInterval(intervalo);
 
           // **CORRECCIÓN 2: Llamar sin transacción para descargas**
@@ -1201,13 +1201,13 @@ class CargaMasivaService {
             userId,
             archivoData,
           );
-        } else if (!estado.success || intentos >= maxIntentosPolling) {
+        } else if (["failed", "error"].includes(estado.status) || intentos >= maxIntentosPolling) {
           clearInterval(intervalo);
 
-          if (estado.status === "failed") {
+          if (["failed", "error"].includes(estado.status)) {
             await proceso.update({
               estado: "fallado",
-              error: estado.error,
+              error: estado.error || `Error en Python: ${estado.status}`,
             });
           } else if (intentos >= maxIntentosPolling) {
             // Timeout
