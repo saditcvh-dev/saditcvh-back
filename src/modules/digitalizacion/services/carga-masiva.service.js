@@ -689,9 +689,15 @@ class CargaMasivaService {
   }
 
   estimarPaginas(buffer) {
-    const texto = buffer.toString("latin1");
-    const matches = texto.match(/\/Type\s*\/Page\b/g);
-    return matches ? matches.length : 1;
+    // Evitar desbordamiento V8 "Cannot create a string longer than 0x1fffffe8 characters"
+    if (buffer.length > 200 * 1024 * 1024) return 500; // Para más de 200MB retornamos 500 según requerimiento
+    try {
+      const texto = buffer.toString("latin1");
+      const matches = texto.match(/\/Type\s*\/Page\b/g);
+      return matches ? matches.length : 1;
+    } catch {
+      return 1;
+    }
   }
 
   // Método principal para procesar carga masiva
