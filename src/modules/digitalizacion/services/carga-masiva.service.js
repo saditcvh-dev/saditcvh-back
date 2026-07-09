@@ -1621,9 +1621,21 @@ class CargaMasivaService {
   async listarLotesPorUsuario(userId, limit = 20, offset = 0) {
     const { fn, col, literal } = this.ocrProcesoModel.sequelize;
 
-    await this.reconciliarProcesosOCRPendientes(userId);
-    const pythonResponse = await OCRProcessorService.listarProcesos();
-    const pdfs = pythonResponse.pdfs || [];
+    // Verificar si hay procesos pendientes ANTES de llamar a Python
+    const hayPendientes = await this.ocrProcesoModel.count({
+      where: {
+        user_id: userId,
+        estado: { [Op.in]: ["pendiente", "procesando"] },
+      },
+    });
+
+    let pdfs = [];
+    if (hayPendientes > 0) {
+      // Solo hacemos UNA llamada a Python en lugar de dos
+      const pythonResponse = await OCRProcessorService.listarProcesos();
+      pdfs = pythonResponse.pdfs || [];
+      await this.reconciliarProcesosOCRPendientes(userId, pdfs);
+    }
     
     // Obtener total de lotes distintos para la paginación
     const totalLotes = await this.ocrProcesoModel.count({
@@ -1949,7 +1961,7 @@ class CargaMasivaService {
     }, 10000); // Esperar 10 segundos
   }
 
-  async reconciliarProcesosOCRPendientes(userId) {
+  async reconciliarProcesosOCRPendientes(userId, providedPdfs = null) {
     const pendientes = await this.ocrProcesoModel.findAll({
       where: {
         user_id: userId,
@@ -1959,9 +1971,11 @@ class CargaMasivaService {
 
     if (!pendientes.length) return;
 
-    // Una sola llamada a Python
-    const response = await OCRProcessorService.listarProcesos();
-    const pdfs = response.pdfs || [];
+    let pdfs = providedPdfs;
+    if (!pdfs) {
+      const response = await OCRProcessorService.listarProcesos();
+      pdfs = response.pdfs || [];
+    }
 
     for (const proceso of pendientes) {
       const taskId = proceso.metadata?.taskId;
