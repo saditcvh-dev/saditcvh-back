@@ -1155,7 +1155,7 @@ class CargaMasivaService {
    * Monitorear proceso OCR en Python
    */
   async monitorearProcesoOCR(proceso, autorizacionInfo, userId, archivoData) {
-    const maxIntentosPolling = 60; // 60 intentos * 5 segundos = 5 minutos
+    const maxIntentosPolling = 360; // 360 intentos * 5 segundos = 30 minutos
     let intentos = 0;
 
     const intervalo = setInterval(async () => {
@@ -1165,7 +1165,7 @@ class CargaMasivaService {
         // **CORRECCIÓN 1: Verificar estado SIN loops internos**
         const estado = await OCRProcessorService.verificarEstadoOCRUnico(
           proceso.metadata.pythonPdfId,
-          5000, // Timeout de 5 segundos
+          10000, // Timeout de 10 segundos
         );
 
         // Si Python responde con 'not found' o 404, seguir esperando
@@ -2130,22 +2130,18 @@ class CargaMasivaService {
       });
 
       if (activeDbProcess) {
-        const autorizacion = await this.autorizacionModel.findByPk(activeDbProcess.autorizacion_id);
-        if (autorizacion) {
-          const municipio = await this.municipioModel.findByPk(autorizacion.municipioId);
-          if (municipio) {
-            global.activeOcrLock = {
-              municipioNum: municipio.num,
-              municipioId: municipio.id,
-              municipioNombre: municipio.nombre,
-              loteId: activeDbProcess.lote_id,
-              total: 0,
-              completados: 0,
-              fallados: 0,
-              errores: [],
-              startedAt: activeDbProcess.createdAt,
-            };
-          }
+        console.log("[RECONCILIACION] Limpiando procesos OCR huérfanos tras reinicio del servidor...");
+        try {
+          await this.ocrProcesoModel.update(
+            { estado: "fallado", error: "Interrumpido por reinicio del servidor" },
+            { where: { estado: ["pendiente", "procesando"] } }
+          );
+          await this.archivoDigitalModel.update(
+            { estado_ocr: "pendiente" },
+            { where: { estado_ocr: "procesando" } }
+          );
+        } catch (err) {
+          console.error("Error limpiando procesos huérfanos:", err);
         }
       }
     }
