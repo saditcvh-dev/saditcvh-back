@@ -21,19 +21,30 @@ const getList = async (req, res) => {
         const pending = await ArchivoDigital.count({ where: { estado_ocr: "pendiente" } });
         const failed = await ArchivoDigital.count({ where: { estado_ocr: "fallido" } });
 
-        const mappedPdfs = archivos.map(archivo => ({
-            id: archivo.id,
-            filename: archivo.nombre_archivo,
-            pages: archivo.total_paginas || 1,
-            size: archivo.tamano_bytes,
-            size_bytes: archivo.tamano_bytes,
-            status: archivo.estado_ocr, // pendiente, procesando, completado, fallido
-            upload_time: new Date(archivo.fecha_digitalizacion).getTime(),
-            created_at: archivo.fecha_digitalizacion,
-            extracted_text_path: archivo.ruta_texto,
-            used_ocr: archivo.estado_ocr !== 'pendiente',
-            error: null
-        }));
+        const mappedPdfs = archivos.map(archivo => {
+            // Normalizar estado_ocr (BD guarda en español, frontend espera inglés)
+            const estadoMap = {
+                'completado': 'completed',
+                'procesando': 'processing',
+                'pendiente':  'pending',
+                'fallido':    'failed'
+            };
+            const statusNormalizado = estadoMap[archivo.estado_ocr] || 'failed';
+
+            return {
+                id: archivo.id,
+                filename: archivo.nombre_archivo,
+                pages: archivo.total_paginas || 1,
+                size: archivo.tamano_bytes,
+                size_bytes: archivo.tamano_bytes,
+                status: statusNormalizado,
+                upload_time: new Date(archivo.fecha_digitalizacion).getTime(),
+                created_at: archivo.fecha_digitalizacion,
+                extracted_text_path: archivo.ruta_texto,
+                used_ocr: archivo.estado_ocr !== 'pendiente',
+                error: null
+            };
+        });
 
         res.json({
             total: total,
