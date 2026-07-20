@@ -65,4 +65,17 @@ router.get(
   documentoController.descargarArchivo,
 );
 
+router.post(
+  "/archivo/:archivoId/search",
+  verifyDocumentMunicipality,
+  documentoController.searchOcr
+);
+
+router.post(
+  "/archivo/:archivoId/eliminar-pagina",
+  verifyDocumentMunicipality,
+  checkPermission("editar"),
+  documentoController.eliminarPagina
+);
+
 module.exports = router;

@@ -273,6 +273,174 @@ class DocumentoController {
     }
   }
 
+  // Buscar en OCR del archivo
+  async searchOcr(req, res) {
+    try {
+      const { archivoId } = req.params;
+      const { term, caseSensitive } = req.body;
+      
+      if (!term) {
+        return res.status(400).json({ success: false, message: "Término de búsqueda requerido" });
+      }
+
+      const archivo = await documentoService.obtenerArchivoDigital(archivoId);
+      if (!archivo || !archivo.texto_ocr) {
+        return res.status(404).json({ success: false, message: "No hay texto OCR disponible para este archivo" });
+      }
+
+      const texto = archivo.texto_ocr;
+      const searchText = caseSensitive ? term : term.toLowerCase();
+      const content = caseSensitive ? texto : texto.toLowerCase();
+
+      const results = [];
+      let index = content.indexOf(searchText);
+      
+      while (index !== -1) {
+        const contextStart = Math.max(0, index - 50);
+        const contextEnd = Math.min(texto.length, index + term.length + 50);
+        const context = texto.substring(contextStart, contextEnd).replace(/\n/g, ' ').trim();
+        
+        const prevText = texto.substring(0, index);
+        const pageMatches = prevText.match(/--- Página (\d+) ---/g);
+        let page = 1;
+        if (pageMatches && pageMatches.length > 0) {
+          const lastMatch = pageMatches[pageMatches.length - 1];
+          const pageNum = parseInt(lastMatch.match(/\d+/)[0]);
+          page = pageNum;
+        }
+
+        results.push({
+          page,
+          context: `...${context}...`,
+          position: index
+        });
+        
+        index = content.indexOf(searchText, index + 1);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Búsqueda completada",
+        data: {
+          term,
+          total_matches: results.length,
+          results
+        }
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  // Eliminar página de un PDF y crear nueva versión
+  async eliminarPagina(req, res) {
+    try {
+      const { archivoId } = req.params;
+      const { pagina } = req.body;
+      const userId = req.user.id;
+
+      if (!pagina || pagina < 1) {
+        return res.status(400).json({ success: false, message: "Número de página inválido" });
+      }
+
+      const archivoOriginal = await documentoService.obtenerArchivoDigital(archivoId);
+      if (!archivoOriginal) {
+        return res.status(404).json({ success: false, message: "Archivo original no encontrado" });
+      }
+
+      const basePath = process.env.FILE_STORAGE_PATH || path.resolve(__dirname, "../../../storage");
+      const filePath = path.join(basePath, path.normalize(archivoOriginal.ruta_almacenamiento));
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ success: false, message: "Archivo físico no encontrado" });
+      }
+
+      const buffer = await fs.promises.readFile(filePath);
+      
+      const { PDFDocument } = require('pdf-lib');
+      const pdfDoc = await PDFDocument.load(buffer);
+      const pageCount = pdfDoc.getPageCount();
+
+      if (pagina > pageCount) {
+        return res.status(400).json({ success: false, message: `La página ${pagina} no existe. El documento solo tiene ${pageCount} páginas.` });
+      }
+
+      if (pageCount === 1) {
+        return res.status(400).json({ success: false, message: "No puedes eliminar la única página del documento." });
+      }
+
+      pdfDoc.removePage(pagina - 1);
+      const newPdfBytes = await pdfDoc.save();
+
+      // Crear el objeto archivo simulado para `crearNuevaVersion`
+      const nuevoArchivo = {
+        buffer: Buffer.from(newPdfBytes),
+        originalname: archivoOriginal.nombre_archivo,
+        mimetype: archivoOriginal.mime_type || "application/pdf",
+        size: newPdfBytes.length
+      };
+
+      // Se crea una nueva versión del documento asociado al archivoOriginal
+      const DocumentoModel = require("../models/documento.model");
+      const documentoOriginal = await DocumentoModel.findByPk(archivoOriginal.documento_id);
+      
+      const nuevaVersion = await documentoService.crearNuevaVersion(
+        documentoOriginal.id,
+        {
+          titulo: documentoOriginal.titulo,
+          descripcion: documentoOriginal.descripcion,
+          fechaDocumento: documentoOriginal.fechaDocumento,
+          metadata: documentoOriginal.metadata,
+        },
+        nuevoArchivo,
+        userId
+      );
+
+      // Conservar el texto OCR original en el nuevo archivoDigital recién creado
+      if (nuevaVersion && nuevaVersion.archivosDigitales && nuevaVersion.archivosDigitales.length > 0) {
+        const nuevoArchivoDigital = nuevaVersion.archivosDigitales[0];
+        
+        // Conservar explícitamente el estado y texto OCR
+        const ArchivoDigitalModel = require("../models/archivo-digital.model");
+        await ArchivoDigitalModel.update({
+          estado_ocr: archivoOriginal.estado_ocr,
+          texto_ocr: archivoOriginal.texto_ocr,
+        }, {
+          where: { id: nuevoArchivoDigital.id }
+        });
+      }
+
+      await auditService.createLog(req, {
+        action: "DELETE_PAGE_FROM_DOCUMENT",
+        module: "Explorador",
+        entityId: nuevaVersion.id,
+        details: {
+          message: `Se eliminó la página ${pagina} creando nueva versión`,
+          documentId: documentoOriginal.id,
+          fileName: archivoOriginal.nombre_archivo,
+          createdBy: userId,
+          status: "SUCCESS",
+        },
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "Página eliminada y nueva versión creada correctamente",
+        data: nuevaVersion,
+      });
+
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
   async descargarArchivo(req, res) {
     try {
       const { archivoId } = req.params;
