@@ -207,7 +207,7 @@ class CargaMasivaController {
           {
             allowSinNomenclatura: true,
             municipioFallbackNum: 85,
-            modalidadFallbackNum: 52,
+            modalidadFallbackNum: 53,
             tipoFallbackAbrev: "P",
             origen: "DIRECTO",
           },
@@ -406,7 +406,7 @@ class CargaMasivaController {
           {
             allowSinNomenclatura: true,
             municipioFallbackNum: 85,
-            modalidadFallbackNum: 52,
+            modalidadFallbackNum: 53,
             tipoFallbackAbrev: "P",
             origen: "COMPRIMIDO",
           },
@@ -438,7 +438,7 @@ class CargaMasivaController {
           origen: "COMPRIMIDO",
           allowSinNomenclatura: true,
           municipioFallbackNum: 85,
-          modalidadFallbackNum: 52,
+          modalidadFallbackNum: 53,
           tipoFallbackAbrev: "P",
         },
       );
@@ -515,7 +515,7 @@ class CargaMasivaController {
           {
             allowSinNomenclatura: true,
             municipioFallbackNum: 85,
-            modalidadFallbackNum: 52,
+            modalidadFallbackNum: 53,
             tipoFallbackAbrev: "P",
             origen: "DIRECTO",
           },
@@ -548,7 +548,7 @@ class CargaMasivaController {
           origen: "DIRECTO",
           allowSinNomenclatura: true,
           municipioFallbackNum: 85,
-          modalidadFallbackNum: 52,
+          modalidadFallbackNum: 53,
           tipoFallbackAbrev: "P",
         },
       );

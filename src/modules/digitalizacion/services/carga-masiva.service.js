@@ -622,18 +622,20 @@ class CargaMasivaService {
       baseName = `${baseName}_v${version}_${timestamp}`;
     } else {
       // ──── CASO SIN NOMENCLATURA o fallback ────
-      baseName = path
-        .basename(nombreOriginal, ".pdf")
-        .replace(/[^a-zA-Z0-9-_áéíóúÁÉÍÓÚñÑ\s]/g, "_")
-        .replace(/\s+/g, "_")
-        .replace(/_+/g, "_")
-        .replace(/^_+|_+$/g, "");
+      let nombreLimpioForFile = path.basename(nombreOriginal, ".pdf").trim();
+      nombreLimpioForFile = nombreLimpioForFile
+        .replace(/[^a-zA-Z0-9-_áéíóúÁÉÍÓÚñÑ\s\(\)]/g, "")
+        .trim();
 
-      if (!baseName || baseName.length < 3) {
-        baseName = `documento_${Date.now().toString().slice(-8)}`;
+      if (!nombreLimpioForFile || nombreLimpioForFile.length < 3) {
+        nombreLimpioForFile = `documento_${Date.now().toString().slice(-8)}`;
       }
 
-      baseName = `${baseName}_v${version}`;
+      const muniNum = autorizacion.municipio?.num || 85;
+      const carpetaStr = autorizacion.nombreCarpeta || "";
+      const timestamp = Date.now();
+
+      baseName = `M${muniNum}_${nombreLimpioForFile}_${carpetaStr}_v${version}_${timestamp}`;
     }
 
     // ────────────────────────────────────────────────
@@ -658,14 +660,7 @@ class CargaMasivaService {
 
     // Anti-colisión real (muy importante en cargas masivas)
     while (await this.existeArchivo(rutaCandidata)) {
-      if (esConNomenclatura) {
-        // Para nomenclatura: sufijo numérico después del timestamp
-        nombreFinal = `${baseName}_${contador}${extension}`;
-      } else {
-        // Para sin nomenclatura: más legible con paréntesis
-        const sinVersion = baseName.replace(/_v\d+$/, "");
-        nombreFinal = `${sinVersion} (${contador})_v${version}${extension}`;
-      }
+      nombreFinal = `${baseName}_${contador}${extension}`;
       rutaCandidata = path.join(rutaCompleta, nombreFinal);
       contador++;
     }
@@ -877,7 +872,9 @@ class CargaMasivaService {
                 userId,
               );
 
-              await proceso.update({ autorizacion_id: autorizacionInfo.autorizacion.id });
+              if (proceso) {
+                await proceso.update({ autorizacion_id: autorizacionInfo.autorizacion.id });
+              }
 
               // ================================
               //  PROCESAR ARCHIVO
@@ -895,11 +892,13 @@ class CargaMasivaService {
               // ================================
               //  ACTUALIZAR A COMPLETADO
               // ================================
-              await proceso.update({
-                estado: "completado",
-                documento_id: resultado.documentoId,
-                fecha_procesado: new Date(),
-              });
+              if (proceso) {
+                await proceso.update({
+                  estado: "completado",
+                  documento_id: resultado.documentoId,
+                  fecha_procesado: new Date(),
+                });
+              }
 
               resultados.exitosos++;
               resultados.detalles.push({
@@ -1870,7 +1869,7 @@ class CargaMasivaService {
             {
               allowSinNomenclatura: opciones?.allowSinNomenclatura || true,
               municipioFallbackNum: opciones?.municipioFallbackNum || 85,
-              modalidadFallbackNum: opciones?.modalidadFallbackNum || 52,
+              modalidadFallbackNum: opciones?.modalidadFallbackNum || 53,
               tipoFallbackAbrev: opciones?.tipoFallbackAbrev || "P",
             },
             directoIndex++,
@@ -2066,7 +2065,7 @@ class CargaMasivaService {
     const {
       allowSinNomenclatura = false,
       municipioFallbackNum = 85,
-      modalidadFallbackNum = 52,
+      modalidadFallbackNum = 53,
       tipoFallbackAbrev = "P",
     } = opciones;
 
@@ -2117,12 +2116,18 @@ class CargaMasivaService {
       const nextNumString = nextNumber.toString().padStart(2, "0");
 
       const seqLabel = nextNumber.toString();
+      
+      let nombreLimpioForAuth = nombreArchivo.replace(/\.pdf$/i, "").trim();
+      nombreLimpioForAuth = nombreLimpioForAuth.substring(0, 45).replace(/[^a-zA-Z0-9\-\_\(\)\s]/g, "").trim();
+      if (!nombreLimpioForAuth) nombreLimpioForAuth = `P_${seqLabel}`;
+      const nuevoNumeroAuth = `M${municipioFallbackNum}_${nombreLimpioForAuth}`.substring(0, 50);
+
       console.warn(
-        `[SIN NOMENCLATURA] Nombre inválido (${nombreArchivo}) → usando fallback P-${seqLabel}`,
+        `[SIN NOMENCLATURA] Nombre inválido (${nombreArchivo}) → usando fallback ${nuevoNumeroAuth}`,
       );
 
       return {
-        numeroAutorizacion: `P-${seqLabel}`,
+        numeroAutorizacion: nuevoNumeroAuth,
         municipioNum: municipioFallbackNum,
         modalidadNum: modalidadFallbackNum,
         tipoAbrev: tipoFallbackAbrev,
