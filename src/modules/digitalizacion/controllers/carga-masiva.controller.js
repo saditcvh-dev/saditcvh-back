@@ -648,6 +648,24 @@ class CargaMasivaController {
       return res.status(400).json({ success: false, message: error.message });
     }
   }
+
+  async procesarDocumento(req, res) {
+    try {
+      const { archivoId } = req.params;
+      const userId = req.user.id;
+
+      // Se ejecuta el procesamiento individual que actualizará in-place
+      await CargaMasivaService.procesarDocumentoIndividual(parseInt(archivoId, 10), userId);
+      
+      return res.json({ 
+        success: true, 
+        message: "Documento encolado para procesamiento de OCR exitosamente." 
+      });
+    } catch (error) {
+      console.error("Error en procesarDocumento:", error);
+      return res.status(400).json({ success: false, message: error.message });
+    }
+  }
 }
 
 module.exports = new CargaMasivaController();

@@ -67,6 +67,27 @@ const getList = async (req, res) => {
     }
 };
 
+const getPdfText = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const archivo = await ArchivoDigital.findByPk(id);
+
+        if (!archivo) {
+            return res.status(404).json({ error: "Archivo no encontrado" });
+        }
+
+        const texto = archivo.texto_ocr || "";
+
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="${archivo.nombre_archivo || 'documento'}_ocr.txt"`);
+        res.send(texto);
+    } catch (error) {
+        console.error("Error en pdf.controller getPdfText:", error);
+        res.status(500).json({ error: "Ocurrió un error al obtener el texto del PDF" });
+    }
+};
+
 module.exports = {
-    getList
+    getList,
+    getPdfText
 };

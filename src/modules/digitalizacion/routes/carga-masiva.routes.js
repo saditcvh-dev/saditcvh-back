@@ -72,6 +72,7 @@ router.get('/pendientes-municipio/:municipioNum', CargaMasivaController.obtenerP
 router.post('/procesar-municipio', CargaMasivaController.procesarMunicipio);
 router.get('/fallidos-municipio/:municipioNum', CargaMasivaController.obtenerFallidosMunicipio);
 router.post('/reintentar-archivo/:archivoId', CargaMasivaController.reintentarArchivo);
+router.post('/procesar-documento/:archivoId', CargaMasivaController.procesarDocumento);
 
 // ============== SP-N (sin nomenclatura, OCR OFF) ==============
 router.post(

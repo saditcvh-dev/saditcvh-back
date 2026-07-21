@@ -3,5 +3,6 @@ const router = express.Router();
 const pdfController = require("../controllers/pdf.controller");
 
 router.get("/list", pdfController.getList);
+router.get("/:id/text", pdfController.getPdfText);
 
 module.exports = router;

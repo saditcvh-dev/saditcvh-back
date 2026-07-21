@@ -2572,6 +2572,113 @@ class CargaMasivaService {
 
     return { success: true };
   }
+
+  async procesarDocumentoIndividual(archivoId, userId) {
+    const file = await this.archivoDigitalModel.findByPk(archivoId, {
+      include: [
+        {
+          model: this.documentoModel,
+          as: "documento",
+          required: true,
+          include: [
+            {
+              model: this.autorizacionModel,
+              as: "autorizacion",
+              required: true,
+              include: [
+                { model: this.municipioModel, as: "municipio" },
+                { model: this.modalidadModel, as: "modalidad" },
+                { model: this.tiposAutorizacionModel, as: "tipoAutorizacion" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (!file) {
+      throw new Error(`Archivo digital con ID ${archivoId} no encontrado.`);
+    }
+
+    const currentLock = await this.obtenerMunicipioProcesando();
+    if (currentLock) {
+      throw new Error(`No se puede procesar en este momento. Se está procesando el municipio: ${currentLock.municipioNombre || currentLock.municipioNum}.`);
+    }
+
+    const basePath = process.env.FILE_STORAGE_PATH || "./storage";
+    const absolutePath = path.join(basePath, file.ruta_almacenamiento);
+    const fileBuffer = await fs.readFile(absolutePath);
+
+    const autorizacion = file.documento.autorizacion;
+    const autorizacionInfo = {
+      autorizacion,
+      municipio: autorizacion.municipio,
+      modalidad: autorizacion.modalidad,
+      tipoAutorizacion: autorizacion.tipoAutorizacion,
+    };
+
+    const parsedName = this.parsearNombreArchivoSafe(file.nombre_archivo);
+
+    const loteId = `lote_procesar_${archivoId}_${Date.now()}`;
+    const proceso = await this.ocrProcesoModel.create({
+      lote_id: loteId,
+      archivo_id: `temp_${Date.now()}`,
+      nombre_archivo: file.nombre_archivo,
+      autorizacion_id: autorizacion.id,
+      user_id: userId,
+      estado: "pendiente",
+      metadata: {
+        datosArchivo: {
+          ...parsedName,
+          esSinNomenclatura: !parsedName.success,
+          nombreOriginal: file.nombre_archivo,
+        },
+        tamano: file.tamano_bytes,
+        updateInPlace: true,
+        archivoDigitalId: file.id,
+        documentoId: file.documento_id
+      },
+    });
+
+    await file.update({ estado_ocr: "procesando" });
+
+    await this.enviarArchivoParaOCR(
+      {
+        buffer: fileBuffer,
+        nombre: file.nombre_archivo,
+        tamano: file.tamano_bytes,
+        esSinNomenclatura: !parsedName.success,
+        nombreOriginal: file.nombre_archivo,
+      },
+      proceso,
+      autorizacionInfo,
+      userId,
+    );
+
+    // Ejecutar monitoreo del procesamiento en background y actualizar ArchivoDigital cuando acabe
+    this.esperarSubLoteOCR([proceso]).then(async () => {
+      const dbProceso = await this.ocrProcesoModel.findByPk(proceso.id);
+      if (dbProceso) {
+        if (dbProceso.estado === "completado") {
+          await file.reload();
+          if (file.estado_ocr !== "completado") {
+            await file.update({ estado_ocr: "completado" });
+          }
+        } else {
+          await file.update({
+            estado_ocr: "fallido",
+            metadatos_tecnicos: {
+              ...file.metadatos_tecnicos,
+              error: dbProceso.error || "Fallo en procesamiento de OCR de Python",
+              failedAt: new Date(),
+            },
+          });
+        }
+      }
+    }).catch(console.error);
+
+    return { success: true };
+  }
 }
 
 module.exports = new CargaMasivaService();
