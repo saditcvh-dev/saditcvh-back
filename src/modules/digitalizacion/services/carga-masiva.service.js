@@ -353,7 +353,7 @@ class CargaMasivaService {
       // Determinar si procesamos con OCR
       let bufferFinal = archivoData.buffer;
       let textoOCR = null;
-      let estadoOCR = useOcr ? "pendiente" : "completado";
+      let estadoOCR = "pendiente";
 
       if (useOcr) {
         estadoOCR = "procesando";
@@ -635,7 +635,7 @@ class CargaMasivaService {
       const carpetaStr = autorizacion.nombreCarpeta || "";
       const timestamp = Date.now();
 
-      baseName = `M${muniNum}_${nombreLimpioForFile}_${carpetaStr}_v${version}_${timestamp}`;
+      baseName = `${carpetaStr}_v${version}_${timestamp}`;
     }
 
     // ────────────────────────────────────────────────
