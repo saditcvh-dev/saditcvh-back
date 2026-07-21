@@ -380,7 +380,8 @@ class DocumentoController {
         buffer: Buffer.from(newPdfBytes),
         originalname: archivoOriginal.nombre_archivo,
         mimetype: archivoOriginal.mime_type || "application/pdf",
-        size: newPdfBytes.length
+        size: newPdfBytes.length,
+        total_paginas: pageCount - 1
       };
 
       // Se crea una nueva versión del documento asociado al archivoOriginal

@@ -124,6 +124,18 @@ class DocumentoService {
       const checksumMd5 = this.calcularChecksumMd5(archivo.buffer);
       const checksumSha256 = this.calcularChecksumSha256(archivo.buffer);
 
+      let numPaginas = archivo.total_paginas;
+      if (!numPaginas && archivo.mimetype === "application/pdf" && archivo.buffer) {
+        try {
+          const { PDFDocument } = require("pdf-lib");
+          const pdfDoc = await PDFDocument.load(archivo.buffer);
+          numPaginas = pdfDoc.getPageCount();
+        } catch (error) {
+          console.error("Error leyendo páginas del PDF:", error);
+        }
+      }
+      numPaginas = numPaginas || 1;
+
       // Crear registro de archivo digital
       const archivoDigital = await ArchivoDigital.create(
         {
@@ -141,7 +153,7 @@ class DocumentoService {
           // fecha_digitalizacion: new Date(),
           digitalizado_por: userId,
           version_archivo: 1,
-          total_paginas: 1,
+          total_paginas: numPaginas,
         },
         { transaction },
       );
@@ -151,7 +163,7 @@ class DocumentoService {
       await documento.update(
         {
           estadoDigitalizacion: "digitalizado",
-          paginas: 1,
+          paginas: numPaginas,
         },
         { transaction },
       );
