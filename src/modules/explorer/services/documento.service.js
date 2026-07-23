@@ -140,7 +140,7 @@ class DocumentoService {
       const archivoDigital = await ArchivoDigital.create(
         {
           documento_id: documento.id,
-          nombre_archivo: archivo.originalname,
+          nombre_archivo: nombreArchivo,
           ruta_almacenamiento: path.join(
             estructura.rutaRelativa,
             nombreArchivo,
