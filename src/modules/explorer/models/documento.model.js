@@ -116,6 +116,12 @@ Documento.belongsTo(Autorizacion, {
     as: 'autorizacion'
 });
 
+Autorizacion.hasMany(Documento, {
+    foreignKey: 'autorizacion_id',
+    sourceKey: 'id',
+    as: 'documentos'
+});
+
 Documento.belongsTo(Documento, {
     foreignKey: 'documento_padre_id',
     as: 'documentoPadre',

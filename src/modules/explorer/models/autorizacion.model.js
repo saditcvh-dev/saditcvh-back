@@ -45,12 +45,12 @@ const Autorizacion = sequelize.define("Autorizacion", {
         }
     },
     consecutivo1: {
-        type: DataTypes.INTEGER,
-        defaultValue: 1,
+        type: DataTypes.STRING(10),
+        defaultValue: '1',
     },
     consecutivo2: {
-        type: DataTypes.INTEGER,
-        defaultValue: 1,
+        type: DataTypes.STRING(10),
+        defaultValue: '1',
     },
     nombreCarpeta: {
         type: DataTypes.STRING(500),
