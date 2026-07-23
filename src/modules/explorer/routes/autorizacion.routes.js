@@ -42,6 +42,7 @@ router.get('/:id', validarId, autorizacionController.obtenerAutorizacionPorId);
 router.put('/:id', validarId, autorizacionController.actualizarAutorizacion);
 router.delete('/:id', validarId, autorizacionController.eliminarAutorizacion);
 router.patch('/:id/estado', validarId, autorizacionController.cambiarEstadoAutorizacion);
+router.post('/:id/migrar', validarId, autorizacionController.migrarAutorizacion);
 
 // Rutas con número de autorización
 router.get('/numero/:numero', validarNumeroAutorizacion, autorizacionController.obtenerAutorizacionPorNumero);

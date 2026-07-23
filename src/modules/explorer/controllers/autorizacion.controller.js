@@ -267,6 +267,64 @@ class AutorizacionController {
         }
     };
 
+    // Migrar autorización
+    migrarAutorizacion = async (req, res) => {
+        const userId = req.user?.id || null;
+
+        try {
+            const { id } = req.params;
+            const migrarData = req.body;
+
+            const resultado = await this.autorizacionService.migrarAutorizacion(id, migrarData);
+
+            await auditService.createLog(req, {
+                action: 'MIGRATE_AUTORIZACION',
+                module: 'Autorizaciones',
+                entityId: id,
+                details: {
+                    message: 'Autorización migrada exitosamente',
+                    autorizacionId: id,
+                    newData: migrarData,
+                    createdBy: userId,
+                    status: 'SUCCESS'
+                }
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Autorización transferida exitosamente',
+                data: resultado
+            });
+        } catch (error) {
+            await auditService.createLog(req, {
+                action: 'MIGRATE_AUTORIZACION',
+                module: 'Autorizaciones',
+                entityId: req.params.id,
+                details: {
+                    message: 'Error al migrar autorización',
+                    error: error.message,
+                    createdBy: userId,
+                    status: 'ERROR'
+                }
+            });
+
+            // Send specialized error if conflict detected
+            if (error.code === 'MIGRATION_CONFLICT') {
+                return res.status(409).json({
+                    success: false,
+                    code: 'MIGRATION_CONFLICT',
+                    message: error.message
+                });
+            }
+
+            res.status(error.status || 500).json({
+                success: false,
+                message: error.message || 'Error al migrar autorización',
+                error: error.errors || error
+            });
+        }
+    };
+
 
     // Activar/Desactivar autorización
     cambiarEstadoAutorizacion = async (req, res) => {

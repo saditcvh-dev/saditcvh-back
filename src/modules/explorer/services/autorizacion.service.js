@@ -5,6 +5,9 @@ const {
 const Modalidad = require('../models/Modalidad.model');
 const TiposAutorizacion = require('../models/TiposAutorizacion.model');
 const Documento = require('../models/documento.model');
+const ArchivoDigital = require('../models/archivo-digital.model');
+const fs = require('fs').promises;
+const path = require('path');
 const {
 	Op
 } = require('sequelize');
@@ -15,6 +18,7 @@ class AutorizacionService {
 		this.modalidadModel = Modalidad;
 		this.tiposAutorizacionModel = TiposAutorizacion;
 		this.documentoModel = Documento;
+		this.archivoDigitalModel = ArchivoDigital;
 	}
 	// Obtener todas las autorizaciones con paginación
 	obtenerAutorizaciones = async (options = {}) => {
@@ -486,6 +490,181 @@ crearAutorizacion = async (autorizacionData) => {
 		}
 		catch (error) {
 			console.error('Error en generarReporteAutorizaciones:', error);
+			throw error;
+		}
+	};
+
+	// Helper para obtener ruta física
+	construirRutaRelativa(municipioNum, tipoId, nombreCarpeta) {
+		const munStr = String(municipioNum).padStart(2, "0");
+		const tipoStr = String(tipoId).padStart(2, "0");
+		return path.join(munStr, tipoStr, nombreCarpeta);
+	}
+
+	// Migrar (Transferir) Autorización
+	migrarAutorizacion = async (id, migrarData) => {
+		const transaction = await this.autorizacionModel.sequelize.transaction();
+		try {
+			// 1. Obtener la autorización actual y sus dependencias
+			const autorizacion = await this.autorizacionModel.findByPk(id, {
+				include: [
+					{ model: this.municipioModel, as: 'municipio' },
+					{ model: this.tiposAutorizacionModel, as: 'tipoAutorizacion' },
+					{ 
+						model: this.documentoModel, 
+						as: 'documentos',
+						include: [{ model: this.archivoDigitalModel, as: 'archivosDigitales' }] 
+					}
+				],
+				transaction
+			});
+
+			if (!autorizacion) {
+				throw { status: 404, message: 'Autorización no encontrada' };
+			}
+
+			// 2. Obtener datos del destino
+			const municipioDestino = await this.municipioModel.findByPk(migrarData.municipioId, { transaction });
+			if (!municipioDestino) throw { status: 400, message: 'Municipio destino no existe' };
+
+			const modalidadDestino = await this.modalidadModel.findByPk(migrarData.modalidadId, { transaction });
+			if (!modalidadDestino) throw { status: 400, message: 'Modalidad destino no existe' };
+
+			let tipoDestino = autorizacion.tipoAutorizacion;
+			let nuevoNumAutorizacion = autorizacion.numeroAutorizacion;
+			let nuevoConsecutivo1 = autorizacion.consecutivo1;
+			let nuevoConsecutivo2 = autorizacion.consecutivo2;
+
+			// Si se cambian los parámetros de nomenclatura (ej. desde 85)
+			if (migrarData.tipoId) {
+				tipoDestino = await this.tiposAutorizacionModel.findByPk(migrarData.tipoId, { transaction });
+				if (!tipoDestino) throw { status: 400, message: 'Tipo destino no existe' };
+			}
+			if (migrarData.numeroAutorizacion) nuevoNumAutorizacion = migrarData.numeroAutorizacion;
+			if (migrarData.consecutivo1) nuevoConsecutivo1 = migrarData.consecutivo1;
+			if (migrarData.consecutivo2) nuevoConsecutivo2 = migrarData.consecutivo2;
+
+			// 3. Chequear si la autorización destino ya existe (si no es la misma que estamos editando)
+			const autoExistente = await this.autorizacionModel.findOne({
+				where: {
+					municipioId: municipioDestino.id,
+					modalidadId: modalidadDestino.id,
+					tipoId: tipoDestino.id,
+					consecutivo1: nuevoConsecutivo1,
+					consecutivo2: nuevoConsecutivo2,
+					id: { [Op.ne]: autorizacion.id }
+				},
+				transaction
+			});
+
+			if (autoExistente && !migrarData.colisionConfirmada) {
+				throw { 
+					status: 409, 
+					code: 'MIGRATION_CONFLICT', 
+					message: 'Ya existe una autorización con estos parámetros en el destino. ¿Deseas fusionarla?' 
+				};
+			}
+
+			// 4. Generar nuevo nombre de carpeta
+			const nuevoNombreCarpeta = [
+				nuevoNumAutorizacion,
+				municipioDestino.num.toString().padStart(2, "0"),
+				modalidadDestino.num.toString().padStart(2, "0"),
+				nuevoConsecutivo1.toString().padStart(4, "0"),
+				nuevoConsecutivo2.toString().padStart(4, "0"),
+				tipoDestino.abreviatura
+			].join("_");
+
+			// 5. Configurar rutas de archivos físicos
+			const basePath = process.env.FILE_STORAGE_PATH || "./storage";
+			
+			const rutaRelativaOrigen = this.construirRutaRelativa(autorizacion.municipio.num, autorizacion.tipoAutorizacion.id, autorizacion.nombreCarpeta);
+			const rutaCompletaOrigen = path.join(basePath, rutaRelativaOrigen);
+
+			const rutaRelativaDestino = this.construirRutaRelativa(municipioDestino.num, tipoDestino.id, nuevoNombreCarpeta);
+			const rutaCompletaDestino = path.join(basePath, rutaRelativaDestino);
+
+			// 6. Verificar y mover físicamente si aplica
+			if (rutaCompletaOrigen !== rutaCompletaDestino) {
+				try {
+					// Comprobar si origen existe físicamente
+					await fs.access(rutaCompletaOrigen);
+
+					// Crear carpeta base de destino si no existe (el padre)
+					await fs.mkdir(path.dirname(rutaCompletaDestino), { recursive: true });
+
+					// Comprobar si destino ya existe físicamente
+					let destinoExiste = true;
+					try {
+						await fs.access(rutaCompletaDestino);
+					} catch {
+						destinoExiste = false;
+					}
+
+					if (destinoExiste) {
+						// Si ya existe y es por colisión confirmada, mover los archivos del origen al destino
+						const archivos = await fs.readdir(rutaCompletaOrigen);
+						for (const archivo of archivos) {
+							const sourceFile = path.join(rutaCompletaOrigen, archivo);
+							const destFile = path.join(rutaCompletaDestino, archivo);
+							await fs.rename(sourceFile, destFile);
+						}
+						// Opcional: eliminar carpeta de origen si queda vacía
+						await fs.rmdir(rutaCompletaOrigen).catch(() => {});
+					} else {
+						// Mover carpeta completa
+						await fs.rename(rutaCompletaOrigen, rutaCompletaDestino);
+					}
+				} catch (fsError) {
+					console.warn('Error moviendo archivos físicos (puede no existir el dir):', fsError.message);
+				}
+			}
+
+			// 7. Actualizar registros en DB
+			await autorizacion.update({
+				municipioId: municipioDestino.id,
+				modalidadId: modalidadDestino.id,
+				tipoId: tipoDestino.id,
+				numeroAutorizacion: nuevoNumAutorizacion,
+				consecutivo1: nuevoConsecutivo1,
+				consecutivo2: nuevoConsecutivo2,
+				nombreCarpeta: nuevoNombreCarpeta
+			}, { transaction });
+
+			// Actualizar las rutas en los Archivos Digitales
+			if (autorizacion.documentos) {
+				for (const doc of autorizacion.documentos) {
+					if (doc.archivosDigitales) {
+						for (const ad of doc.archivosDigitales) {
+							// El archivo mantiene su nombre original, pero la carpeta cambia
+							const nuevaRutaAlmacenamiento = path.join(rutaRelativaDestino, ad.nombre_archivo);
+							await ad.update({
+								ruta_almacenamiento: nuevaRutaAlmacenamiento.replace(/\\/g, '/')
+							}, { transaction });
+						}
+					}
+				}
+			}
+
+			// Si hubo colisión y se fusionó, podríamos marcar como desactivado la anterior o manejar los docs
+			// Por ahora como en el frontend hacemos "soft delete", actualizamos el estado si corresponde:
+			if (autoExistente && migrarData.colisionConfirmada) {
+				// autoExistente hereda los documentos. En un caso real moveriamos los documentos a autoExistente
+				// Y haríamos un delete soft de la original. 
+				// Como esto ya es avanzado, simplemente moveremos el archivo y soft-delete la original
+				for (const doc of autorizacion.documentos) {
+					await doc.update({ autorizacionId: autoExistente.id }, { transaction });
+				}
+				await autorizacion.update({ activo: false }, { transaction }); // soft delete / inactive
+				await transaction.commit();
+				return autoExistente;
+			}
+
+			await transaction.commit();
+			return autorizacion;
+		} catch (error) {
+			await transaction.rollback();
+			console.error('Error en migrarAutorizacion:', error);
 			throw error;
 		}
 	};
