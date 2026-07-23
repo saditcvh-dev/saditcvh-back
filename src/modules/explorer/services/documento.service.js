@@ -362,6 +362,7 @@ class DocumentoService {
             required: false,
             paranoid: false,
             separate: true,
+            attributes: { exclude: ['texto_ocr'] },
             include: [
               {
                 model: User,
@@ -392,6 +393,7 @@ class DocumentoService {
                 required: false,
                 paranoid: false,
                 separate: true,
+                attributes: { exclude: ['texto_ocr'] },
                 include: [
                   {
                     model: User,
@@ -455,6 +457,7 @@ class DocumentoService {
           const recuperadosModels = await ArchivoDigital.findAll({
             where: { documento_id: idsRevision },
             paranoid: false,
+            attributes: { exclude: ['texto_ocr'] },
             include: [
               {
                 model: User,

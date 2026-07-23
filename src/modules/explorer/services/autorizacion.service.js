@@ -636,8 +636,9 @@ crearAutorizacion = async (autorizacionData) => {
 				for (const doc of autorizacion.documentos) {
 					if (doc.archivosDigitales) {
 						for (const ad of doc.archivosDigitales) {
-							// El archivo mantiene su nombre original, pero la carpeta cambia
-							const nuevaRutaAlmacenamiento = path.join(rutaRelativaDestino, ad.nombre_archivo);
+							// El archivo mantiene su nombre físico generado en disco, solo cambia la carpeta
+							const nombreFisicoReal = path.basename(ad.ruta_almacenamiento);
+							const nuevaRutaAlmacenamiento = path.join(rutaRelativaDestino, nombreFisicoReal);
 							await ad.update({
 								ruta_almacenamiento: nuevaRutaAlmacenamiento.replace(/\\/g, '/')
 							}, { transaction });
