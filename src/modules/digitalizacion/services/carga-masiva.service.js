@@ -1203,31 +1203,58 @@ class CargaMasivaService {
         } else if (["failed", "error"].includes(estado.status) || intentos >= maxIntentosPolling) {
           clearInterval(intervalo);
 
-          if (["failed", "error"].includes(estado.status)) {
-            await proceso.update({
-              estado: "fallado",
-              error: estado.error || `Error en Python: ${estado.status}`,
-            });
-          } else if (intentos >= maxIntentosPolling) {
-            // Timeout
-            await proceso.update({
-              estado:
-                proceso.intentos >= proceso.maxIntentos
-                  ? "fallado"
-                  : "pendiente",
-              error: estado.error || "Timeout en procesamiento OCR",
-            });
+          const isTimeout = intentos >= maxIntentosPolling;
+          const errorMsg = isTimeout ? "Timeout en procesamiento OCR" : (estado.error || `Error en Python: ${estado.status}`);
 
-            // Reintentar si aún tiene intentos
-            if (proceso.intentos < proceso.maxIntentos) {
-              setTimeout(() => {
-                this.enviarArchivoParaOCR(
+          if (isTimeout && proceso.intentos < (proceso.maxIntentos || 3)) {
+            // Reintentar si aún tiene intentos (solo en timeout)
+            await proceso.update({
+              estado: "pendiente",
+              error: errorMsg,
+            });
+            setTimeout(() => {
+              this.enviarArchivoParaOCR(
+                archivoData,
+                proceso,
+                autorizacionInfo,
+                userId
+              ).catch(console.error);
+            }, 30000);
+          } else {
+            // Agotó intentos o falló explícitamente => FALLBACK a guardar sin OCR
+            console.warn(`[OCR_FALLIDO_FALLBACK] OCR falló para ${proceso.nombreArchivo || ""} (${errorMsg}). Intentando fallback...`);
+            try {
+              if (proceso.metadata?.updateInPlace && proceso.metadata?.archivoDigitalId) {
+                // Documento ya existe, solo actualizar estado OCR
+                await this.archivoDigitalModel.update(
+                  { estado_ocr: "fallido", texto_ocr: null },
+                  { where: { id: proceso.metadata.archivoDigitalId } }
+                );
+                await proceso.update({
+                  estado: "completado",
+                  error: `OCR falló: ${errorMsg}. Archivo original mantenido.`,
+                  fecha_procesado: new Date(),
+                });
+              } else {
+                // Archivo nuevo, guardar sin OCR
+                const resultado = await this.procesarArchivoMasivo(
                   archivoData,
-                  proceso,
                   autorizacionInfo,
                   userId,
-                ).catch(console.error);
-              }, 30000);
+                  { useOcr: false }
+                );
+                await proceso.update({
+                  estado: "completado",
+                  documento_id: resultado.documentoId,
+                  error: `OCR falló: ${errorMsg}. Se guardó el archivo original sin OCR.`,
+                  fecha_procesado: new Date(),
+                });
+              }
+            } catch (fallbackError) {
+              await proceso.update({
+                estado: "fallado",
+                error: `OCR falló (${errorMsg}) y fallback también falló: ${fallbackError.message}`,
+              });
             }
           }
         }
