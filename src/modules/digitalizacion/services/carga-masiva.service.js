@@ -256,6 +256,7 @@ class CargaMasivaService {
       // **MODIFICACIÓN: Buscar autorización por la combinación de datos**
       let autorizacion = await this.autorizacionModel.findOne({
         where: {
+          numeroAutorizacion: datosArchivo.numeroAutorizacion,
           municipioId: municipio.id,
           modalidadId: modalidad.id,
           tipoId: tipoAutorizacion.id,
@@ -290,6 +291,7 @@ class CargaMasivaService {
           if (createError.name === "SequelizeUniqueConstraintError") {
             autorizacion = await this.autorizacionModel.findOne({
               where: {
+                numeroAutorizacion: datosArchivo.numeroAutorizacion,
                 municipioId: municipio.id,
                 modalidadId: modalidad.id,
                 tipoId: tipoAutorizacion.id,
