@@ -8,6 +8,7 @@ const Documento = require('../models/documento.model');
 const ArchivoDigital = require('../models/archivo-digital.model');
 const fs = require('fs').promises;
 const path = require('path');
+const sequelize = require('../../../config/db');
 const {
 	Op
 } = require('sequelize');
@@ -77,9 +78,18 @@ class AutorizacionService {
 					as: 'tipoAutorizacion',
 					attributes: ['id', 'nombre', 'abreviatura']
 				}],
-				order: [
-					[sortBy, sortOrder]
-				],
+				order: (sortBy && sortBy !== 'id')
+					? [[sortBy, sortOrder]]
+					: [
+						sequelize.literal(`
+							CASE 
+								WHEN numero_autorizacion ~ '^[0-9]+$' THEN numero_autorizacion::integer 
+								ELSE NULL 
+							END ASC NULLS LAST
+						`),
+						['numero_autorizacion', 'ASC'],
+						['id', 'ASC']
+					],
 				limit: parseInt(limit),
 				offset: offset,
 				attributes: {
@@ -234,7 +244,14 @@ crearAutorizacion = async (autorizacionData) => {
 				limit: parseInt(limit),
 				offset: offset,
 				order: [
-					['id', 'DESC']
+					sequelize.literal(`
+						CASE 
+							WHEN numero_autorizacion ~ '^[0-9]+$' THEN numero_autorizacion::integer 
+							ELSE NULL 
+						END ASC NULLS LAST
+					`),
+					['numero_autorizacion', 'ASC'],
+					['id', 'ASC']
 				],
 				attributes: {
 					exclude: ['createdAt', 'updatedAt']
