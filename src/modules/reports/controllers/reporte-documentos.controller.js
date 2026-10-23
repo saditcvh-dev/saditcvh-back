@@ -1003,27 +1003,17 @@ class DigitalizationReportController {
       
       doc.moveDown(1.5);
       
-      // Calcular estadísticas adicionales
-      const documentosConArchivos = report.data.filter(d => 
-        d.digitalizacion_info?.total_archivos > 0
-      ).length;
-      
-      const documentosCompletados = report.data.filter(d => 
-        d.estado_digitalizacion === 'completado'
-      ).length;
-      
-      const documentosEnProceso = report.data.filter(d => 
-        d.estado_digitalizacion === 'en_proceso'
-      ).length;
-      
-      const documentosPendientes = report.data.filter(d => 
-        d.estado_digitalizacion === 'pendiente'
-      ).length;
-      
-      const documentosConOCR = report.data.filter(d => 
-        d.digitalizacion_info?.estado_ocr === 'procesado'
-      ).length;
-      
+      // Estadísticas globales obtenidas de los metadatos completos (evita limitarse a los 100 del array paginado)
+      const documentosConArchivos = report.metadata?.digitalized_documents || 0;
+      const statusCompletados = report.metadata?.documents_by_status?.find(s => s.status === 'completado')?.count || 0;
+      const statusEnProceso = report.metadata?.documents_by_status?.find(s => s.status === 'en_proceso')?.count || 0;
+      const statusPendientes = report.metadata?.documents_by_status?.find(s => s.status === 'pendiente')?.count || 0;
+      const documentosCompletados = statusCompletados;
+      const documentosEnProceso = statusEnProceso;
+      const documentosPendientes = report.metadata?.pending_documents !== undefined ? report.metadata.pending_documents : statusPendientes;
+      const documentosConOCR = report.metadata?.distribution_by_modalidad
+        ? report.metadata.distribution_by_modalidad.reduce((sum, m) => sum + (m.archivos_ocr_procesado || 0), 0)
+        : 0;
       const porcentajeCompletado = totalDocs > 0 ? 
         ((documentosCompletados / totalDocs) * 100).toFixed(1) : 0;
       
