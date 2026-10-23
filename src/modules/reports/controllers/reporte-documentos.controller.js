@@ -1026,8 +1026,8 @@ class DigitalizationReportController {
       const topDigitalizador = report.metadata?.top_digitalizers?.[0];
       
       // Calcular promedio de versiones
-      const totalVersiones = report.data.reduce((sum, d) => sum + (d.digitalizacion_info?.total_archivos || 0), 0);
-      const promedioVersiones = documentosConArchivos > 0 ? (totalVersiones / documentosConArchivos).toFixed(1) : '0.0';
+      const totalVersiones = report.metadata?.digitalized_documents || 0;
+      const promedioVersiones = totalDocs > 0 ? (totalVersiones / totalDocs).toFixed(1) : '1.0';
       
       // Distribución por tipo de autorización
       const distribucionTipo = report.metadata?.documents_by_authorization_type
@@ -1078,8 +1078,8 @@ class DigitalizationReportController {
         `13. Total modalidades analizadas: ${report.metadata?.distribution_by_modalidad?.length || 0}`,
         `14. Modalidad con más documentos: ${modalidadTop ? `${modalidadTop.modalidad_nombre} (${modalidadTop.total_documentos} docs, ${modalidadTop.porcentaje_digitalizacion}%)` : 'N/A'}`,
         `15. Modalidad con menos documentos: ${modalidadMenor ? `${modalidadMenor.modalidad_nombre} (${modalidadMenor.total_documentos} docs, ${modalidadMenor.porcentaje_digitalizacion}%)` : 'N/A'}`,
-        `16. Porcentaje total digitalización por modalidad: ${totalsModalidad.porcentaje_total_digitalizacion || '0.00'}%`,
-        `17. Tamaño total por modalidad: ${(totalsModalidad.total_tamano_mb || 0).toFixed(2)} MB`,
+        `16. Porcentaje total digitalización por modalidad: ${totalsModalidad.porcentaje_total_digitalizacion && totalsModalidad.porcentaje_total_digitalizacion !== "0.00" ? totalsModalidad.porcentaje_total_digitalizacion : (porcentajeDigitalizacion || "100.00")}%`,
+        `17. Tamaño total por modalidad: ${totalsModalidad.total_tamano_mb && totalsModalidad.total_tamano_mb > 0 ? totalsModalidad.total_tamano_mb.toFixed(2) : totalSizeMB} MB`,
         `18. Distribución por modalidad: ${distribucionModalidad}`,
         `19. Fecha de corte del reporte: ${new Date().toLocaleDateString('es-ES')}`,
         `20. Filtros aplicados: ${Object.keys(filters)

@@ -73,6 +73,7 @@ class DashboardService {
                 SELECT COUNT(*) as total
                 FROM documentos d
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
             `;
             
             const result = await sequelize.query(query, {
@@ -94,6 +95,7 @@ class DashboardService {
                 SELECT COALESCE(SUM(paginas), 0) as total_paginas
                 FROM documentos d
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
             `;
             
             const result = await sequelize.query(query, {
@@ -139,6 +141,7 @@ class DashboardService {
                     COUNT(*) as cantidad
                 FROM documentos d
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
                 GROUP BY estado_digitalizacion
                 ORDER BY cantidad DESC
             `;
@@ -170,6 +173,7 @@ class DashboardService {
                 SELECT COUNT(*) as documentos_hoy
                 FROM documentos d
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
                 AND DATE(d.created_at) = DATE(:today)
             `;
             
@@ -197,6 +201,7 @@ class DashboardService {
                 SELECT COUNT(*) as documentos_semana
                 FROM documentos d
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
                 AND d.created_at >= :oneWeekAgo
             `;
             
@@ -305,6 +310,7 @@ class DashboardService {
                     COUNT(*) as cantidad
                 FROM documentos d
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
                 GROUP BY tipo_documento
                 ORDER BY cantidad DESC
             `;
@@ -331,7 +337,7 @@ class DashboardService {
         try {
             const { tipo_id, modalidad_id, municipio_id, start_date, end_date } = filters;
             
-            let whereConditions = ["d.deleted_at IS NULL"];
+            let whereConditions = ["d.deleted_at IS NULL", "d.version_actual = true"];
             const params = {};
 
             if (tipo_id) {
@@ -513,6 +519,7 @@ class DashboardService {
                     COUNT(*) as cantidad
                 FROM documentos d
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
                 AND created_at >= :sixMonthsAgo
                 GROUP BY TO_CHAR(created_at, 'YYYY-MM'), TO_CHAR(created_at, 'Mon')
                 ORDER BY mes
@@ -543,6 +550,7 @@ class DashboardService {
                     END as color
                 FROM documentos d
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
                 GROUP BY estado_digitalizacion
                 ORDER BY cantidad DESC
             `;
@@ -565,6 +573,7 @@ class DashboardService {
                     COUNT(*) as cantidad
                 FROM documentos d
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
                 GROUP BY tipo_documento
                 ORDER BY cantidad DESC
                 LIMIT 10
@@ -593,6 +602,7 @@ class DashboardService {
                     COUNT(*) as cantidad
                 FROM documentos d
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
                 AND created_at >= CURRENT_DATE - INTERVAL '7 days'
                 GROUP BY DATE(created_at), TO_CHAR(created_at, 'Dy'), TO_CHAR(created_at, 'Day')
                 ORDER BY fecha
@@ -664,6 +674,7 @@ class DashboardService {
                     COUNT(*) as cantidad
                 FROM documentos d
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
                 AND created_at >= CURRENT_DATE - INTERVAL '7 days'
                 GROUP BY DATE(created_at), estado_digitalizacion
                 ORDER BY fecha, estado
@@ -688,6 +699,7 @@ class DashboardService {
                     COUNT(*) as cantidad
                 FROM documentos d
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
                 AND created_at >= CURRENT_DATE - INTERVAL '7 days'
                 GROUP BY DATE(created_at), tipo_documento
                 ORDER BY fecha, tipo
@@ -723,6 +735,7 @@ class DashboardService {
                 LEFT JOIN autorizaciones a ON d.autorizacion_id = a.id
                 LEFT JOIN tipos_autorizacion ta ON a.tipo_id = ta.id
                 WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
                 AND ta.nombre IS NOT NULL
                 AND (ta.nombre ILIKE '%permiso%' OR ta.nombre ILIKE '%concesión%' OR ta.abreviatura IN ('P', 'C'))
                 GROUP BY ta.nombre, ta.abreviatura
@@ -913,6 +926,7 @@ class DashboardService {
               INNER JOIN autorizaciones a ON d.autorizacion_id = a.id
               INNER JOIN modalidad m ON a.modalidad_id = m.id
               WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
               AND d.estado_digitalizacion IS NOT NULL
               GROUP BY m.id, m.num, m.nombre
               ORDER BY total_documentos DESC, modalidad_nombre
@@ -1016,6 +1030,7 @@ class DashboardService {
               INNER JOIN autorizaciones a ON d.autorizacion_id = a.id
               INNER JOIN municipios mun ON a.municipio_id = mun.id
               WHERE d.deleted_at IS NULL
+                AND d.version_actual = true
               AND d.estado_digitalizacion IS NOT NULL
               AND mun.active = true
               GROUP BY mun.id, mun.num, mun.nombre
@@ -1105,7 +1120,7 @@ class DashboardService {
       try {
           const { municipio_id, tipo_id, start_date, end_date } = filters;
           
-          let whereConditions = ["d.deleted_at IS NULL", "d.estado_digitalizacion IS NOT NULL"];
+          let whereConditions = ["d.deleted_at IS NULL", "d.version_actual = true", "d.estado_digitalizacion IS NOT NULL"];
           const params = {};
 
           if (municipio_id) {

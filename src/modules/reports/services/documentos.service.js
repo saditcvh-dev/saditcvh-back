@@ -365,7 +365,7 @@ class DigitalizationReportService {
                         SUM(CASE WHEN ad.id IS NOT NULL THEN ad.total_paginas ELSE 0 END) as total_paginas,
                         COUNT(DISTINCT CASE WHEN ad.id IS NOT NULL THEN ad.digitalizado_por END) as digitalizadores_unicos,
                         AVG(CASE WHEN ad.id IS NOT NULL THEN ad.tamano_bytes ELSE NULL END) as promedio_bytes,
-                        COUNT(DISTINCT CASE WHEN ad.estado_ocr = 'procesado' THEN ad.id END) as archivos_ocr_procesado
+                        COUNT(DISTINCT CASE WHEN ad.estado_ocr IN ('procesado', 'completado') THEN ad.id END) as archivos_ocr_procesado
                     FROM documentos d
                     LEFT JOIN autorizaciones a ON d.autorizacion_id = a.id
                     LEFT JOIN modalidad m ON a.modalidad_id = m.id
@@ -632,6 +632,7 @@ class DigitalizationReportService {
                 
                 // Actualizar estado OCR (usar el más avanzado)
                 const ocrPriority = {
+                    'completado': 4,
                     'procesado': 3,
                     'en_proceso': 2,
                     'pendiente': 1,
@@ -758,7 +759,7 @@ class DigitalizationReportService {
                     MIN(ad.fecha_digitalizacion) as primera_digitalizacion,
                     MAX(ad.fecha_digitalizacion) as ultima_digitalizacion,
                     AVG(ad.tamano_bytes) as promedio_bytes,
-                    COUNT(DISTINCT CASE WHEN ad.estado_ocr = 'procesado' THEN ad.id END) as ocr_procesados,
+                    COUNT(DISTINCT CASE WHEN ad.estado_ocr IN ('procesado', 'completado') THEN ad.id END) as ocr_procesados,
                     COUNT(DISTINCT CASE WHEN ad.estado_ocr = 'pendiente' THEN ad.id END) as ocr_pendientes
                 FROM archivos_digitales ad
                 INNER JOIN users u ON ad.digitalizado_por = u.id
@@ -991,7 +992,7 @@ class DigitalizationReportService {
                         SUM(CASE WHEN ad.id IS NOT NULL THEN ad.total_paginas ELSE 0 END) as total_paginas,
                         COUNT(DISTINCT CASE WHEN ad.id IS NOT NULL THEN ad.digitalizado_por END) as digitalizadores_unicos,
                         AVG(CASE WHEN ad.id IS NOT NULL THEN ad.tamano_bytes ELSE NULL END) as promedio_bytes,
-                        COUNT(DISTINCT CASE WHEN ad.estado_ocr = 'procesado' THEN ad.id END) as archivos_ocr_procesado,
+                        COUNT(DISTINCT CASE WHEN ad.estado_ocr IN ('procesado', 'completado') THEN ad.id END) as archivos_ocr_procesado,
                         COUNT(DISTINCT CASE WHEN ad.estado_ocr = 'pendiente' THEN ad.id END) as archivos_ocr_pendiente,
                         COUNT(DISTINCT CASE WHEN ad.estado_ocr = 'en_proceso' THEN ad.id END) as archivos_ocr_en_proceso,
                         MIN(CASE WHEN ad.id IS NOT NULL THEN ad.fecha_digitalizacion ELSE NULL END) as primera_digitalizacion,
