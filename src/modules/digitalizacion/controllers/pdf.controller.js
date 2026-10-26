@@ -1,4 +1,7 @@
 const ArchivoDigital = require("../../explorer/models/archivo-digital.model");
+const Documento = require("../../explorer/models/documento.model");
+const sequelize = require("../../../config/db");
+const { QueryTypes } = require("sequelize");
 
 const getList = async (req, res) => {
     try {
@@ -6,20 +9,43 @@ const getList = async (req, res) => {
         const limit = parseInt(req.query.limit) || 50;
         const offset = (page - 1) * limit;
 
-        const { count, rows: archivos } = await ArchivoDigital.findAndCountAll({
+        // Contadores agrupados basados en documentos vigentes (número de referencia: 24,452)
+        const [countsResult] = await sequelize.query(`
+            SELECT 
+                COUNT(ad.id) as total,
+                COUNT(CASE WHEN ad.estado_ocr = 'completado' THEN 1 END) as completed,
+                COUNT(CASE WHEN ad.estado_ocr = 'procesando' THEN 1 END) as processing,
+                COUNT(CASE WHEN ad.estado_ocr = 'pendiente' THEN 1 END) as pending,
+                COUNT(CASE WHEN ad.estado_ocr = 'fallido' THEN 1 END) as failed
+            FROM archivos_digitales ad
+            INNER JOIN documentos d ON ad.documento_id = d.id
+            WHERE ad.deleted_at IS NULL
+              AND d.deleted_at IS NULL
+              AND d.version_actual = true
+        `, { type: QueryTypes.SELECT });
+
+        const total = parseInt(countsResult?.total) || 0;
+        const completed = parseInt(countsResult?.completed) || 0;
+        const processing = parseInt(countsResult?.processing) || 0;
+        const pending = parseInt(countsResult?.pending) || 0;
+        const failed = parseInt(countsResult?.failed) || 0;
+
+        // Obtener listado de archivos correspondientes a documentos vigentes
+        const archivos = await ArchivoDigital.findAll({
             offset,
             limit,
             order: [["fecha_digitalizacion", "DESC"]],
+            include: [{
+                model: Documento,
+                as: "documento",
+                required: true,
+                where: {
+                    version_actual: true,
+                    deleted_at: null,
+                },
+                attributes: ["id", "version_actual"],
+            }],
         });
-
-        // Contadores agrupados
-        const total = count;
-        
-        // Podemos hacer count individual o usar group by
-        const completed = await ArchivoDigital.count({ where: { estado_ocr: "completado" } });
-        const processing = await ArchivoDigital.count({ where: { estado_ocr: "procesando" } });
-        const pending = await ArchivoDigital.count({ where: { estado_ocr: "pendiente" } });
-        const failed = await ArchivoDigital.count({ where: { estado_ocr: "fallido" } });
 
         const mappedPdfs = archivos.map(archivo => {
             // Normalizar estado_ocr (BD guarda en español, frontend espera inglés)
