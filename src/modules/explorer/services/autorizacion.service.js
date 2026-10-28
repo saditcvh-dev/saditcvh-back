@@ -38,7 +38,17 @@ class AutorizacionService {
 			if(filters.estado) whereClause.estado = filters.estado;
 			if(filters.municipioId) whereClause.municipioId = filters.municipioId;
 			if(filters.modalidadId) whereClause.modalidadId = filters.modalidadId;
-			if(filters.tipoId) whereClause.tipoId = filters.tipoId;
+			if(filters.tipoId) {
+				if (parseInt(filters.tipoId) === 1) {
+					whereClause[Op.and] = whereClause[Op.and] || [];
+					whereClause[Op.and].push(sequelize.literal('(tipo_id = 1 OR municipio_id = 85)'));
+				} else if (parseInt(filters.tipoId) === 2) {
+					whereClause[Op.and] = whereClause[Op.and] || [];
+					whereClause[Op.and].push(sequelize.literal('(tipo_id = 2 AND municipio_id != 85)'));
+				} else {
+					whereClause.tipoId = filters.tipoId;
+				}
+			}
 			if(filters.activo !== undefined) whereClause.activo = filters.activo;
 			console.log("search****")
 			console.log(search)

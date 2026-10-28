@@ -341,8 +341,14 @@ class DashboardService {
             const params = {};
 
             if (tipo_id) {
-                whereConditions.push("a.tipo_id = :tipo_id");
-                params.tipo_id = tipo_id;
+                if (parseInt(tipo_id) === 1) {
+                    whereConditions.push("(a.tipo_id = 1 OR a.municipio_id = 85)");
+                } else if (parseInt(tipo_id) === 2) {
+                    whereConditions.push("(a.tipo_id = 2 AND a.municipio_id != 85)");
+                } else {
+                    whereConditions.push("a.tipo_id = :tipo_id");
+                    params.tipo_id = tipo_id;
+                }
             }
 
             if (modalidad_id) {
@@ -408,13 +414,13 @@ class DashboardService {
             // Documentos por tipo de autorización
             const docsByAuthTypeQuery = `
                 SELECT 
-                    ta.nombre as tipo_autorizacion,
+                    CASE WHEN a.municipio_id = 85 THEN 'Concesión' ELSE ta.nombre END as tipo_autorizacion,
                     COUNT(d.id) as total_documentos
                 FROM documentos d
                 LEFT JOIN autorizaciones a ON d.autorizacion_id = a.id
                 LEFT JOIN tipos_autorizacion ta ON a.tipo_id = ta.id
                 ${whereClause}
-                GROUP BY ta.nombre
+                GROUP BY CASE WHEN a.municipio_id = 85 THEN 'Concesión' ELSE ta.nombre END
                 ORDER BY total_documentos DESC
             `;
 
@@ -724,8 +730,8 @@ class DashboardService {
         try {   
             const query = `
                 SELECT 
-                    ta.nombre as tipo_autorizacion,
-                    ta.abreviatura,
+                    CASE WHEN a.municipio_id = 85 THEN 'Concesión' ELSE ta.nombre END as tipo_autorizacion,
+                    CASE WHEN a.municipio_id = 85 THEN 'C' ELSE ta.abreviatura END as abreviatura,
                     COUNT(DISTINCT d.id) as cantidad,
                     ROUND(
                         COUNT(DISTINCT d.id) * 100.0 / NULLIF(SUM(COUNT(DISTINCT d.id)) OVER(), 0), 
@@ -736,9 +742,10 @@ class DashboardService {
                 LEFT JOIN tipos_autorizacion ta ON a.tipo_id = ta.id
                 WHERE d.deleted_at IS NULL
                 AND d.version_actual = true
-                AND ta.nombre IS NOT NULL
-                AND (ta.nombre ILIKE '%permiso%' OR ta.nombre ILIKE '%concesión%' OR ta.abreviatura IN ('P', 'C'))
-                GROUP BY ta.nombre, ta.abreviatura
+                AND (ta.nombre IS NOT NULL OR a.municipio_id = 85)
+                GROUP BY 
+                    CASE WHEN a.municipio_id = 85 THEN 'Concesión' ELSE ta.nombre END,
+                    CASE WHEN a.municipio_id = 85 THEN 'C' ELSE ta.abreviatura END
                 ORDER BY cantidad DESC
             `;
             
@@ -1129,8 +1136,14 @@ class DashboardService {
           }
 
           if (tipo_id) {
-              whereConditions.push("a.tipo_id = :tipo_id");
-              params.tipo_id = tipo_id;
+              if (parseInt(tipo_id) === 1) {
+                  whereConditions.push("(a.tipo_id = 1 OR a.municipio_id = 85)");
+              } else if (parseInt(tipo_id) === 2) {
+                  whereConditions.push("(a.tipo_id = 2 AND a.municipio_id != 85)");
+              } else {
+                  whereConditions.push("a.tipo_id = :tipo_id");
+                  params.tipo_id = tipo_id;
+              }
           }
 
           if (start_date) {

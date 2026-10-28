@@ -439,7 +439,7 @@ class BusquedaService {
                 solicitante: auth.solicitante,
                 municipio: auth.municipio?.nombre,
                 modalidad: auth.modalidad?.nombre,
-                tipo_autorizacion: auth.tipoAutorizacion?.nombre,
+                tipo_autorizacion: (auth.municipioId === 85 || auth.municipio_id === 85) ? 'Concesión' : auth.tipoAutorizacion?.nombre,
                 fecha_creacion: auth.fechaCreacion,
                 documentos_count: auth.documentos?.length || 0,
                 data: auth

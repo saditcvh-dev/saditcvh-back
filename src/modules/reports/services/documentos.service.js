@@ -28,8 +28,14 @@ class DigitalizationReportService {
 
             // Filtro por tipo de autorización
             if (tipo_autorizacion_id) {
-                whereConditions.push("ta.id = ?");
-                params.push(tipo_autorizacion_id);
+                if (parseInt(tipo_autorizacion_id) === 1) {
+                    whereConditions.push("(a.tipo_id = 1 OR a.municipio_id = 85)");
+                } else if (parseInt(tipo_autorizacion_id) === 2) {
+                    whereConditions.push("(a.tipo_id = 2 AND a.municipio_id != 85)");
+                } else {
+                    whereConditions.push("ta.id = ?");
+                    params.push(tipo_autorizacion_id);
+                }
             }
 
             // Filtro por modalidad
@@ -145,9 +151,9 @@ class DigitalizationReportService {
                     u_revisor.email as revisor_email,
                     
                     -- Información de autorización
-                    ta.id as tipo_autorizacion_id,
-                    ta.nombre as tipo_autorizacion_nombre,
-                    ta.abreviatura as tipo_autorizacion_abreviatura,
+                    CASE WHEN a.municipio_id = 85 THEN 1 ELSE ta.id END as tipo_autorizacion_id,
+                    CASE WHEN a.municipio_id = 85 THEN 'Concesión' ELSE ta.nombre END as tipo_autorizacion_nombre,
+                    CASE WHEN a.municipio_id = 85 THEN 'C' ELSE ta.abreviatura END as tipo_autorizacion_abreviatura,
                     
                     -- Información de modalidad
                     m.id as modalidad_id,
@@ -223,8 +229,14 @@ class DigitalizationReportService {
 
             // Aplicar mismos filtros que en la consulta principal
             if (filters.tipo_autorizacion_id) {
-                whereConditions.push("ta.id = ?");
-                params.push(filters.tipo_autorizacion_id);
+                if (parseInt(filters.tipo_autorizacion_id) === 1) {
+                    whereConditions.push("(a.tipo_id = 1 OR a.municipio_id = 85)");
+                } else if (parseInt(filters.tipo_autorizacion_id) === 2) {
+                    whereConditions.push("(a.tipo_id = 2 AND a.municipio_id != 85)");
+                } else {
+                    whereConditions.push("ta.id = ?");
+                    params.push(filters.tipo_autorizacion_id);
+                }
             }
 
             if (filters.modalidad_id) {
@@ -318,14 +330,16 @@ class DigitalizationReportService {
             // DISTRIBUCIÓN POR TIPO DE AUTORIZACIÓN
             const authTypeQuery = `
                 SELECT 
-                    ta.abreviatura as type_abbr,
-                    ta.nombre as type_name,
+                    CASE WHEN a.municipio_id = 85 THEN 'C' ELSE ta.abreviatura END as type_abbr,
+                    CASE WHEN a.municipio_id = 85 THEN 'Concesión' ELSE ta.nombre END as type_name,
                     COUNT(DISTINCT d.id) as document_count
                 FROM documentos d
                 LEFT JOIN autorizaciones a ON d.autorizacion_id = a.id
                 LEFT JOIN tipos_autorizacion ta ON a.tipo_id = ta.id
                 ${whereClause}
-                GROUP BY ta.abreviatura, ta.nombre
+                GROUP BY 
+                    CASE WHEN a.municipio_id = 85 THEN 'C' ELSE ta.abreviatura END,
+                    CASE WHEN a.municipio_id = 85 THEN 'Concesión' ELSE ta.nombre END
                 ORDER BY document_count DESC
             `;
 
